@@ -3,425 +3,696 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PaperBanana - Text-to-Diagram Generator</title>
+    <title>fig — Text to Diagram</title>
     
-    <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
         
         :root {
-            --orange: #ff6b35;
-            --purple: #1a1a2e;
-            --cream: #f4f1de;
-            --dark-bg: #0f0f1e;
-            --card-bg: #16162a;
+            --banana: #F2C744;
+            --banana-light: #FAE17D;
+            --banana-dim: #D4A520;
+            --ink: #1A1A18;
+            --ink-soft: #2A2A27;
+            --ink-medium: #3D3D38;
+            --paper: #FAF8F3;
+            --paper-dim: #EDE9E0;
+            --warm-gray: #9C9889;
+            --success: #4CAF6E;
+            --error: #E05555;
+            --radius: 12px;
+            --radius-sm: 8px;
         }
         
         body {
-            font-family: 'Outfit', sans-serif;
-            background: linear-gradient(135deg, var(--purple) 0%, var(--dark-bg) 100%);
-            color: var(--cream);
+            font-family: 'DM Sans', sans-serif;
+            background: var(--ink);
+            color: var(--paper);
             min-height: 100vh;
-            padding: 2rem;
+            overflow-x: hidden;
         }
         
-        h1, h2, h3 {
-            font-family: 'Syne', sans-serif;
+        /* Subtle grain overlay */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+            pointer-events: none;
+            z-index: 9999;
         }
         
-        .container {
-            max-width: 1400px;
+        /* Layout */
+        .layout {
+            max-width: 920px;
             margin: 0 auto;
+            padding: 2rem 1.5rem 4rem;
         }
         
-        header {
-            text-align: center;
+        /* Header */
+        .header {
+            padding: 2.5rem 0 3rem;
+            display: flex;
+            align-items: baseline;
+            gap: 1rem;
+            border-bottom: 1px solid var(--ink-medium);
             margin-bottom: 3rem;
         }
         
-        h1 {
-            font-size: 3.5rem;
-            font-weight: 800;
-            color: var(--orange);
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-            text-shadow: 0 0 20px rgba(255, 107, 53, 0.5);
-            margin-bottom: 0.5rem;
+        .logo {
+            font-family: 'Instrument Serif', serif;
+            font-size: 3.2rem;
+            font-weight: 400;
+            color: var(--banana);
+            line-height: 1;
+            letter-spacing: -0.02em;
         }
         
-        .subtitle {
-            font-size: 1.2rem;
-            opacity: 0.8;
-            font-weight: 300;
+        .logo-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            background: var(--banana);
+            border-radius: 50%;
+            margin-left: 2px;
+            vertical-align: baseline;
+            animation: dot-pulse 3s ease-in-out infinite;
         }
         
-        .input-section {
-            background: var(--card-bg);
-            border: 2px solid var(--orange);
-            border-radius: 16px;
-            padding: 2rem;
+        @keyframes dot-pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(0.8); }
+        }
+        
+        .tagline {
+            font-family: 'Instrument Serif', serif;
+            font-style: italic;
+            font-size: 1.15rem;
+            color: var(--warm-gray);
+            padding-bottom: 4px;
+        }
+        
+        /* Sections */
+        .section {
             margin-bottom: 2rem;
-            box-shadow: 0 8px 32px rgba(255, 107, 53, 0.2);
         }
         
-        .form-group {
-            margin-bottom: 1.5rem;
+        .section-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.72rem;
+            font-weight: 500;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--banana-dim);
+            margin-bottom: 0.75rem;
         }
         
-        label {
+        /* Input card */
+        .card {
+            background: var(--ink-soft);
+            border: 1px solid var(--ink-medium);
+            border-radius: var(--radius);
+            padding: 1.75rem;
+            transition: border-color 0.3s ease;
+        }
+        
+        .card:focus-within {
+            border-color: var(--banana-dim);
+        }
+        
+        .field + .field {
+            margin-top: 1.25rem;
+        }
+        
+        .field label {
             display: block;
-            font-weight: 600;
-            margin-bottom: 0.5rem;
-            color: var(--orange);
-            font-size: 1.1rem;
+            font-size: 0.82rem;
+            font-weight: 500;
+            color: var(--warm-gray);
+            margin-bottom: 0.4rem;
+            letter-spacing: 0.01em;
         }
         
-        textarea, input[type="text"], select {
+        textarea, input[type="text"] {
             width: 100%;
-            background: var(--purple);
-            border: 2px solid rgba(255, 107, 53, 0.3);
-            border-radius: 8px;
-            padding: 1rem;
-            color: var(--cream);
-            font-family: 'Outfit', sans-serif;
-            font-size: 1rem;
-            transition: all 0.3s ease;
-        }
-        
-        textarea:focus, input[type="text"]:focus, select:focus {
-            outline: none;
-            border-color: var(--orange);
-            box-shadow: 0 0 0 4px rgba(255, 107, 53, 0.1);
-        }
-        
-        textarea {
-            min-height: 200px;
+            background: var(--ink);
+            border: 1px solid var(--ink-medium);
+            border-radius: var(--radius-sm);
+            padding: 0.85rem 1rem;
+            color: var(--paper);
+            font-family: 'DM Sans', sans-serif;
+            font-size: 0.95rem;
+            line-height: 1.6;
+            transition: all 0.2s ease;
             resize: vertical;
         }
         
-        select {
-            cursor: pointer;
+        textarea { min-height: 160px; }
+        
+        textarea:focus, input[type="text"]:focus {
+            outline: none;
+            border-color: var(--banana);
+            box-shadow: 0 0 0 3px rgba(242, 199, 68, 0.08);
         }
         
+        textarea::placeholder, input[type="text"]::placeholder {
+            color: var(--ink-medium);
+            font-style: italic;
+        }
+        
+        /* Controls row */
         .controls {
             display: flex;
-            gap: 1rem;
             align-items: flex-end;
+            gap: 1rem;
+            margin-top: 1.5rem;
         }
         
-        .controls .form-group {
-            flex: 1;
-            margin-bottom: 0;
+        .select-wrap {
+            position: relative;
+            flex: 0 0 auto;
         }
         
-        button {
-            background: linear-gradient(135deg, var(--orange) 0%, #ff8c5a 100%);
-            border: none;
-            color: var(--purple);
-            padding: 1rem 2.5rem;
-            font-size: 1.2rem;
-            font-weight: 700;
-            font-family: 'Syne', sans-serif;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            border-radius: 8px;
+        .select-wrap label {
+            display: block;
+            font-size: 0.82rem;
+            font-weight: 500;
+            color: var(--warm-gray);
+            margin-bottom: 0.4rem;
+        }
+        
+        select {
+            appearance: none;
+            background: var(--ink);
+            border: 1px solid var(--ink-medium);
+            border-radius: var(--radius-sm);
+            padding: 0.85rem 2.5rem 0.85rem 1rem;
+            color: var(--paper);
+            font-family: 'DM Sans', sans-serif;
+            font-size: 0.95rem;
             cursor: pointer;
-            transition: all 0.3s ease;
-            box-shadow: 0 4px 16px rgba(255, 107, 53, 0.4);
+            transition: border-color 0.2s ease;
         }
         
-        button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(255, 107, 53, 0.6);
+        select:focus {
+            outline: none;
+            border-color: var(--banana);
         }
         
-        button:active {
-            transform: translateY(0);
+        .select-wrap::after {
+            content: '▾';
+            position: absolute;
+            right: 0.85rem;
+            bottom: 0.85rem;
+            color: var(--warm-gray);
+            pointer-events: none;
+            font-size: 0.85rem;
         }
         
-        button:disabled {
-            opacity: 0.5;
+        /* Primary button */
+        .btn-primary {
+            flex: 1;
+            background: var(--banana);
+            border: none;
+            color: var(--ink);
+            padding: 0.85rem 2rem;
+            font-family: 'DM Sans', sans-serif;
+            font-size: 0.95rem;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .btn-primary::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, transparent 0%, rgba(255,255,255,0.15) 100%);
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        
+        .btn-primary:hover::before { opacity: 1; }
+        
+        .btn-primary:hover {
+            background: var(--banana-light);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 20px rgba(242, 199, 68, 0.25);
+        }
+        
+        .btn-primary:active { transform: translateY(0); }
+        
+        .btn-primary:disabled {
+            opacity: 0.4;
             cursor: not-allowed;
             transform: none;
+            box-shadow: none;
         }
         
-        .progress-section {
-            background: var(--card-bg);
-            border: 2px solid var(--orange);
-            border-radius: 16px;
-            padding: 2rem;
-            margin-bottom: 2rem;
+        /* Progress panel */
+        .progress-panel {
             display: none;
+            background: var(--ink-soft);
+            border: 1px solid var(--ink-medium);
+            border-radius: var(--radius);
+            overflow: hidden;
         }
         
-        .progress-section.active {
-            display: block;
-        }
+        .progress-panel.active { display: block; }
         
-        .progress-header {
+        .progress-top {
+            padding: 1.5rem 1.75rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 1rem;
         }
         
-        .progress-title {
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: var(--orange);
-        }
-        
-        .progress-status {
+        .progress-message {
             font-size: 1rem;
-            padding: 0.5rem 1rem;
-            background: var(--orange);
-            color: var(--purple);
+            color: var(--paper-dim);
+        }
+        
+        .status-pill {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.7rem;
+            font-weight: 500;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            padding: 0.35rem 0.85rem;
             border-radius: 20px;
-            font-weight: 600;
+            background: rgba(242, 199, 68, 0.12);
+            color: var(--banana);
+            border: 1px solid rgba(242, 199, 68, 0.2);
         }
         
-        .progress-details {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1rem;
-            margin-top: 1rem;
+        .status-pill.completed {
+            background: rgba(76, 175, 110, 0.12);
+            color: var(--success);
+            border-color: rgba(76, 175, 110, 0.2);
         }
         
-        .progress-item {
-            background: var(--purple);
-            padding: 1rem;
-            border-radius: 8px;
-            border-left: 4px solid var(--orange);
+        .status-pill.failed {
+            background: rgba(224, 85, 85, 0.12);
+            color: var(--error);
+            border-color: rgba(224, 85, 85, 0.2);
         }
         
-        .progress-item-label {
-            font-size: 0.9rem;
-            opacity: 0.7;
-            margin-bottom: 0.25rem;
+        .progress-agents {
+            display: flex;
+            border-top: 1px solid var(--ink-medium);
         }
         
-        .progress-item-value {
-            font-size: 1.2rem;
-            font-weight: 600;
+        .agent-step {
+            flex: 1;
+            padding: 1rem 0.75rem;
+            text-align: center;
+            border-right: 1px solid var(--ink-medium);
+            position: relative;
+            transition: all 0.3s ease;
         }
         
-        .progress-bar {
-            width: 100%;
-            height: 8px;
-            background: var(--purple);
-            border-radius: 4px;
+        .agent-step:last-child { border-right: none; }
+        
+        .agent-step.active {
+            background: rgba(242, 199, 68, 0.04);
+        }
+        
+        .agent-step.done {
+            background: rgba(76, 175, 110, 0.04);
+        }
+        
+        .agent-step-icon {
+            font-size: 1.3rem;
+            margin-bottom: 0.3rem;
+            filter: grayscale(1) opacity(0.3);
+            transition: filter 0.3s ease;
+        }
+        
+        .agent-step.active .agent-step-icon,
+        .agent-step.done .agent-step-icon {
+            filter: none;
+        }
+        
+        .agent-step-name {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.65rem;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--warm-gray);
+            transition: color 0.3s ease;
+        }
+        
+        .agent-step.active .agent-step-name { color: var(--banana); }
+        .agent-step.done .agent-step-name { color: var(--success); }
+        
+        /* Thin animated bar at bottom of progress */
+        .thin-bar {
+            height: 3px;
+            background: var(--ink-medium);
+            position: relative;
             overflow: hidden;
-            margin-top: 1rem;
         }
         
-        .progress-bar-fill {
+        .thin-bar-fill {
+            position: absolute;
+            top: 0; left: 0;
             height: 100%;
-            background: linear-gradient(90deg, var(--orange) 0%, #ff8c5a 100%);
-            transition: width 0.3s ease;
-            animation: pulse 2s ease-in-out infinite;
+            background: var(--banana);
+            transition: width 0.5s ease;
         }
         
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.6; }
+        .thin-bar-fill.running::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+            animation: shimmer 1.5s ease-in-out infinite;
         }
         
-        .results-section {
-            background: var(--card-bg);
-            border: 2px solid var(--orange);
-            border-radius: 16px;
-            padding: 2rem;
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+        
+        /* Error */
+        .error-box {
+            margin: 0 1.75rem 1.5rem;
+            padding: 0.85rem 1rem;
+            background: rgba(224, 85, 85, 0.08);
+            border: 1px solid rgba(224, 85, 85, 0.2);
+            border-radius: var(--radius-sm);
+            color: var(--error);
+            font-size: 0.88rem;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        
+        /* Results */
+        .results-panel {
             display: none;
         }
         
-        .results-section.active {
-            display: block;
-        }
+        .results-panel.active { display: block; }
         
         .results-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 2rem;
+            margin-bottom: 1.25rem;
         }
         
         .results-title {
-            font-size: 2rem;
-            font-weight: 700;
-            color: var(--orange);
+            font-family: 'Instrument Serif', serif;
+            font-size: 1.6rem;
+            color: var(--paper);
         }
         
-        .download-btn {
-            padding: 0.75rem 1.5rem;
-            font-size: 1rem;
+        .btn-download {
+            background: transparent;
+            border: 1px solid var(--ink-medium);
+            color: var(--paper-dim);
+            padding: 0.6rem 1.2rem;
+            font-family: 'DM Sans', sans-serif;
+            font-size: 0.85rem;
+            font-weight: 500;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
         }
         
-        .results-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 2rem;
+        .btn-download:hover {
+            border-color: var(--banana);
+            color: var(--banana);
         }
         
-        .result-item {
-            background: var(--purple);
-            border-radius: 12px;
+        /* Final image - hero treatment */
+        .final-image-wrap {
+            background: var(--ink-soft);
+            border: 1px solid var(--ink-medium);
+            border-radius: var(--radius);
             overflow: hidden;
-            border: 2px solid rgba(255, 107, 53, 0.3);
-            transition: all 0.3s ease;
+            margin-bottom: 1.5rem;
+            position: relative;
         }
         
-        .result-item:hover {
-            transform: translateY(-4px);
-            border-color: var(--orange);
-            box-shadow: 0 8px 24px rgba(255, 107, 53, 0.3);
-        }
-        
-        .result-item.final {
-            grid-column: 1 / -1;
-            border-color: var(--orange);
-            box-shadow: 0 8px 32px rgba(255, 107, 53, 0.4);
-        }
-        
-        .result-item img {
+        .final-image-wrap img {
             width: 100%;
             height: auto;
             display: block;
         }
         
-        .result-item-label {
-            padding: 1rem;
-            font-weight: 600;
-            text-align: center;
-            background: var(--purple);
+        .final-badge {
+            position: absolute;
+            top: 1rem;
+            left: 1rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.65rem;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            padding: 0.35rem 0.7rem;
+            background: var(--banana);
+            color: var(--ink);
+            border-radius: 4px;
+            font-weight: 500;
         }
         
-        .result-item.final .result-item-label {
-            background: var(--orange);
-            color: var(--purple);
-            font-size: 1.2rem;
+        /* Iteration thumbnails */
+        .iterations-row {
+            display: flex;
+            gap: 0.75rem;
+            overflow-x: auto;
+            padding-bottom: 0.5rem;
         }
         
-        .error-message {
-            background: #ff3b3b;
-            color: white;
-            padding: 1rem;
-            border-radius: 8px;
-            margin-top: 1rem;
+        .iterations-row::-webkit-scrollbar { height: 4px; }
+        .iterations-row::-webkit-scrollbar-track { background: var(--ink-soft); border-radius: 2px; }
+        .iterations-row::-webkit-scrollbar-thumb { background: var(--ink-medium); border-radius: 2px; }
+        
+        .iter-thumb {
+            flex: 0 0 160px;
+            background: var(--ink-soft);
+            border: 1px solid var(--ink-medium);
+            border-radius: var(--radius-sm);
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
         }
         
-        @media (max-width: 768px) {
-            h1 {
-                font-size: 2rem;
-            }
-            
-            .controls {
-                flex-direction: column;
-            }
-            
-            .results-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .result-item.final {
-                grid-column: 1;
-            }
+        .iter-thumb:hover {
+            border-color: var(--banana-dim);
+            transform: translateY(-2px);
+        }
+        
+        .iter-thumb img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        
+        .iter-label {
+            padding: 0.4rem 0.6rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.65rem;
+            color: var(--warm-gray);
+            letter-spacing: 0.04em;
+        }
+        
+        /* Footer */
+        .footer {
+            margin-top: 4rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--ink-medium);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .footer-left {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.7rem;
+            color: var(--ink-medium);
+            letter-spacing: 0.04em;
+        }
+        
+        .footer-right {
+            font-size: 0.78rem;
+            color: var(--warm-gray);
+        }
+        
+        .footer-right a {
+            color: var(--banana-dim);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        
+        .footer-right a:hover { color: var(--banana); }
+        
+        /* Responsive */
+        @media (max-width: 640px) {
+            .layout { padding: 1rem 1rem 3rem; }
+            .header { flex-direction: column; gap: 0.25rem; padding: 1.5rem 0 2rem; margin-bottom: 2rem; }
+            .logo { font-size: 2.5rem; }
+            .controls { flex-direction: column; }
+            .select-wrap { width: 100%; }
+            select { width: 100%; }
+            .progress-agents { flex-wrap: wrap; }
+            .agent-step { flex: 0 0 33.33%; border-bottom: 1px solid var(--ink-medium); }
+            .iter-thumb { flex: 0 0 120px; }
+        }
+
+        /* Entry animation */
+        .card, .progress-panel, .results-panel {
+            animation: fade-up 0.4s ease both;
+        }
+        
+        @keyframes fade-up {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>🍌 Paper Banana</h1>
-            <p class="subtitle">Transform Your Text Into Academic Diagrams</p>
+    <div class="layout">
+        <header class="header">
+            <h1 class="logo">fig<span class="logo-dot"></span></h1>
+            <span class="tagline">text → diagram, via AI agents</span>
         </header>
         
-        <div class="input-section">
-            <div class="form-group">
-                <label for="text">Methodology / Description Text</label>
-                <textarea 
-                    id="text" 
-                    placeholder="Paste your methodology description or paper text here..."
-                    required
-                ></textarea>
-            </div>
-            
-            <div class="form-group">
-                <label for="caption">Caption / Communicative Intent</label>
-                <input 
-                    type="text" 
-                    id="caption" 
-                    placeholder="What should this diagram communicate?"
-                    required
-                />
-            </div>
-            
-            <div class="controls">
-                <div class="form-group">
-                    <label for="iterations">Refinement Iterations</label>
-                    <select id="iterations">
-                        <option value="1">1 iteration</option>
-                        <option value="2">2 iterations</option>
-                        <option value="3" selected>3 iterations</option>
-                        <option value="4">4 iterations</option>
-                        <option value="5">5 iterations</option>
-                    </select>
+        <div class="section">
+            <div class="section-label">Input</div>
+            <div class="card">
+                <div class="field">
+                    <label for="text">Source text or methodology description</label>
+                    <textarea 
+                        id="text" 
+                        placeholder="Paste your paper methodology, algorithm description, or system architecture…"
+                    ></textarea>
                 </div>
-                <button id="generateBtn" onclick="startGeneration()">
-                    Generate Diagram
-                </button>
+                <div class="field">
+                    <label for="caption">What should the diagram communicate?</label>
+                    <input 
+                        type="text" 
+                        id="caption" 
+                        placeholder="e.g. Overview of the encoder-decoder pipeline with attention"
+                    />
+                </div>
+                <div class="controls">
+                    <div class="select-wrap">
+                        <label for="iterations">Iterations</label>
+                        <select id="iterations">
+                            <option value="1">1 round</option>
+                            <option value="2">2 rounds</option>
+                            <option value="3" selected>3 rounds</option>
+                            <option value="4">4 rounds</option>
+                            <option value="5">5 rounds</option>
+                        </select>
+                    </div>
+                    <button class="btn-primary" id="generateBtn" onclick="startGeneration()">
+                        Generate diagram
+                    </button>
+                </div>
             </div>
         </div>
         
-        <div class="progress-section" id="progressSection">
-            <div class="progress-header">
-                <h2 class="progress-title">Generating...</h2>
-                <span class="progress-status" id="progressStatus">Running</span>
-            </div>
-            
-            <p id="progressMessage" style="margin-bottom: 1rem; font-size: 1.1rem;">Starting generation...</p>
-            
-            <div class="progress-details">
-                <div class="progress-item">
-                    <div class="progress-item-label">Phase</div>
-                    <div class="progress-item-value" id="phaseValue">-</div>
+        <div class="section">
+            <div class="progress-panel" id="progressPanel">
+                <div class="progress-top">
+                    <span class="progress-message" id="progressMessage">Initializing…</span>
+                    <span class="status-pill" id="statusPill">Running</span>
                 </div>
-                <div class="progress-item">
-                    <div class="progress-item-label">Agent</div>
-                    <div class="progress-item-value" id="agentValue">-</div>
+                
+                <div class="progress-agents" id="agentSteps">
+                    <div class="agent-step" data-agent="retriever">
+                        <div class="agent-step-icon">🔍</div>
+                        <div class="agent-step-name">Retriever</div>
+                    </div>
+                    <div class="agent-step" data-agent="planner">
+                        <div class="agent-step-icon">📐</div>
+                        <div class="agent-step-name">Planner</div>
+                    </div>
+                    <div class="agent-step" data-agent="stylist">
+                        <div class="agent-step-icon">🎨</div>
+                        <div class="agent-step-name">Stylist</div>
+                    </div>
+                    <div class="agent-step" data-agent="visualizer">
+                        <div class="agent-step-icon">🖼️</div>
+                        <div class="agent-step-name">Visualizer</div>
+                    </div>
+                    <div class="agent-step" data-agent="critic">
+                        <div class="agent-step-icon">🧪</div>
+                        <div class="agent-step-name">Critic</div>
+                    </div>
                 </div>
-                <div class="progress-item">
-                    <div class="progress-item-label">Iteration</div>
-                    <div class="progress-item-value" id="iterationValue">-</div>
+                
+                <div id="errorContainer"></div>
+                
+                <div class="thin-bar">
+                    <div class="thin-bar-fill" id="barFill" style="width: 0%"></div>
                 </div>
-            </div>
-            
-            <div class="progress-bar">
-                <div class="progress-bar-fill" id="progressBarFill" style="width: 0%"></div>
             </div>
         </div>
         
-        <div class="results-section" id="resultsSection">
-            <div class="results-header">
-                <h2 class="results-title">✨ Results</h2>
-                <button class="download-btn" id="downloadBtn" onclick="downloadFinalImage()">
-                    Download Final
-                </button>
+        <div class="section">
+            <div class="results-panel" id="resultsPanel">
+                <div class="results-header">
+                    <h2 class="results-title">Result</h2>
+                    <button class="btn-download" id="downloadBtn" onclick="downloadFinalImage()">
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M7 1v9m0 0l-3-3m3 3l3-3M1 12h12"/></svg>
+                        Download
+                    </button>
+                </div>
+                <div class="final-image-wrap" id="finalImageWrap"></div>
+                <div class="iterations-row" id="iterationsRow"></div>
             </div>
-            <div class="results-grid" id="resultsGrid"></div>
         </div>
+        
+        <footer class="footer">
+            <div class="footer-left">Powered by PaperBanana</div>
+            <div class="footer-right">
+                <a href="https://github.com/tech-grandpa/banana-paper-ui" target="_blank">GitHub</a>
+            </div>
+        </footer>
     </div>
     
     <script>
         let currentJobId = null;
         let pollInterval = null;
+        const agentOrder = ['retriever', 'planner', 'stylist', 'visualizer', 'critic'];
+        let highestAgentIndex = -1;
+        
+        function resetAgentSteps() {
+            highestAgentIndex = -1;
+            document.querySelectorAll('.agent-step').forEach(el => {
+                el.classList.remove('active', 'done');
+            });
+        }
+        
+        function setAgentActive(agentName) {
+            const idx = agentOrder.indexOf(agentName);
+            if (idx === -1) return;
+            if (idx > highestAgentIndex) highestAgentIndex = idx;
+            
+            document.querySelectorAll('.agent-step').forEach((el, i) => {
+                const a = el.dataset.agent;
+                const ai = agentOrder.indexOf(a);
+                el.classList.remove('active', 'done');
+                if (ai < highestAgentIndex) el.classList.add('done');
+                else if (ai === highestAgentIndex) el.classList.add('active');
+            });
+        }
         
         async function startGeneration() {
             const text = document.getElementById('text').value.trim();
@@ -429,42 +700,37 @@
             const iterations = parseInt(document.getElementById('iterations').value);
             
             if (!text || !caption) {
-                alert('Please fill in both text and caption fields.');
+                alert('Please fill in both fields.');
                 return;
             }
             
-            // Reset UI
-            document.getElementById('progressSection').classList.remove('active');
-            document.getElementById('resultsSection').classList.remove('active');
+            // Reset
+            document.getElementById('resultsPanel').classList.remove('active');
+            document.getElementById('progressPanel').classList.add('active');
             document.getElementById('generateBtn').disabled = true;
+            document.getElementById('errorContainer').innerHTML = '';
+            document.getElementById('statusPill').className = 'status-pill';
+            document.getElementById('statusPill').textContent = 'Running';
+            document.getElementById('barFill').style.width = '0%';
+            document.getElementById('barFill').className = 'thin-bar-fill running';
+            resetAgentSteps();
             
             try {
-                // Start generation
                 const response = await fetch('/api/generate', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ text, caption, iterations }),
                 });
                 
-                if (!response.ok) {
-                    throw new Error('Failed to start generation');
-                }
+                if (!response.ok) throw new Error('Failed to start generation');
                 
                 const data = await response.json();
                 currentJobId = data.job_id;
-                
-                // Show progress section
-                document.getElementById('progressSection').classList.add('active');
-                
-                // Start polling
                 pollInterval = setInterval(pollStatus, 2000);
-                pollStatus(); // Poll immediately
+                pollStatus();
                 
             } catch (error) {
-                console.error('Error starting generation:', error);
-                alert('Failed to start generation: ' + error.message);
+                showError(error.message);
                 document.getElementById('generateBtn').disabled = false;
             }
         }
@@ -474,146 +740,110 @@
             
             try {
                 const response = await fetch(`/api/status/${currentJobId}`);
-                
-                if (!response.ok) {
-                    throw new Error('Failed to fetch status');
-                }
+                if (!response.ok) throw new Error('Failed to fetch status');
                 
                 const status = await response.json();
                 updateProgress(status);
                 
                 if (status.status === 'completed') {
                     clearInterval(pollInterval);
+                    document.getElementById('barFill').className = 'thin-bar-fill';
+                    document.getElementById('barFill').style.width = '100%';
+                    document.getElementById('statusPill').textContent = 'Done';
+                    document.getElementById('statusPill').className = 'status-pill completed';
                     await loadResults();
                     document.getElementById('generateBtn').disabled = false;
                 } else if (status.status === 'failed') {
                     clearInterval(pollInterval);
-                    showError(status.error);
+                    document.getElementById('barFill').className = 'thin-bar-fill';
+                    document.getElementById('statusPill').textContent = 'Failed';
+                    document.getElementById('statusPill').className = 'status-pill failed';
+                    showError(status.error || 'Unknown error');
                     document.getElementById('generateBtn').disabled = false;
                 }
-                
             } catch (error) {
-                console.error('Error polling status:', error);
+                console.error('Polling error:', error);
             }
         }
         
         function updateProgress(status) {
-            // Update status badge
-            const statusBadge = document.getElementById('progressStatus');
-            statusBadge.textContent = status.status.charAt(0).toUpperCase() + status.status.slice(1);
+            const msg = status.progress || 'Processing…';
+            document.getElementById('progressMessage').textContent = msg;
             
-            // Update progress message
-            const message = status.progress || 'Processing...';
-            document.getElementById('progressMessage').textContent = message;
+            if (status.agent) setAgentActive(status.agent);
             
-            // Update details
-            document.getElementById('phaseValue').textContent = status.phase || '-';
-            document.getElementById('agentValue').textContent = status.agent || '-';
-            
-            if (status.iteration && status.total_iterations) {
-                document.getElementById('iterationValue').textContent = 
-                    `${status.iteration} / ${status.total_iterations}`;
-            } else {
-                document.getElementById('iterationValue').textContent = '-';
-            }
-            
-            // Update progress bar (rough estimate)
-            let progress = 0;
+            // Progress estimate
+            let pct = 5;
             if (status.phase === 'planning') {
-                if (status.agent === 'retriever') progress = 10;
-                else if (status.agent === 'planner') progress = 20;
-                else if (status.agent === 'stylist') progress = 30;
+                const agentIdx = agentOrder.indexOf(status.agent);
+                pct = 10 + (agentIdx >= 0 ? agentIdx * 12 : 0);
             } else if (status.phase === 'refinement' && status.iteration && status.total_iterations) {
-                const iterProgress = (status.iteration / status.total_iterations) * 60;
-                progress = 30 + iterProgress;
-            } else if (status.phase === 'completed') {
-                progress = 100;
+                pct = 40 + (status.iteration / status.total_iterations) * 55;
             }
-            
-            document.getElementById('progressBarFill').style.width = progress + '%';
+            document.getElementById('barFill').style.width = Math.min(pct, 95) + '%';
         }
         
         async function loadResults() {
             if (!currentJobId) return;
-            
             try {
                 const response = await fetch(`/api/result/${currentJobId}`);
-                
-                if (!response.ok) {
-                    throw new Error('Failed to fetch results');
-                }
-                
+                if (!response.ok) throw new Error('Failed to fetch results');
                 const result = await response.json();
                 displayResults(result);
-                
             } catch (error) {
-                console.error('Error loading results:', error);
                 showError('Failed to load results: ' + error.message);
             }
         }
         
         function displayResults(result) {
-            const grid = document.getElementById('resultsGrid');
-            grid.innerHTML = '';
+            const wrap = document.getElementById('finalImageWrap');
+            const row = document.getElementById('iterationsRow');
+            wrap.innerHTML = '';
+            row.innerHTML = '';
             
-            // Add iteration images
-            result.iteration_images.forEach((url, index) => {
-                const item = document.createElement('div');
-                item.className = 'result-item';
-                item.innerHTML = `
-                    <img src="${url}" alt="Iteration ${index + 1}">
-                    <div class="result-item-label">Iteration ${index + 1}</div>
-                `;
-                grid.appendChild(item);
-            });
-            
-            // Add final image (highlighted)
             if (result.final_image) {
-                const finalItem = document.createElement('div');
-                finalItem.className = 'result-item final';
-                finalItem.innerHTML = `
-                    <img src="${result.final_image}" alt="Final Diagram">
-                    <div class="result-item-label">🎯 Final Diagram</div>
+                wrap.innerHTML = `
+                    <span class="final-badge">Final output</span>
+                    <img src="${result.final_image}" alt="Final diagram">
                 `;
-                grid.appendChild(finalItem);
             }
             
-            // Show results section
-            document.getElementById('resultsSection').classList.add('active');
+            result.iteration_images.forEach((url, i) => {
+                const thumb = document.createElement('div');
+                thumb.className = 'iter-thumb';
+                thumb.innerHTML = `
+                    <img src="${url}" alt="Iteration ${i + 1}">
+                    <div class="iter-label">Iter ${i + 1}</div>
+                `;
+                thumb.onclick = () => window.open(url, '_blank');
+                row.appendChild(thumb);
+            });
             
-            // Hide progress section
-            document.getElementById('progressSection').classList.remove('active');
+            document.getElementById('resultsPanel').classList.add('active');
+            // Smooth scroll to results
+            document.getElementById('resultsPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
         
         function showError(message) {
-            const progressSection = document.getElementById('progressSection');
-            const errorDiv = document.createElement('div');
-            errorDiv.className = 'error-message';
-            errorDiv.textContent = 'Error: ' + message;
-            progressSection.appendChild(errorDiv);
-            
-            document.getElementById('progressStatus').textContent = 'Failed';
-            document.getElementById('progressStatus').style.background = '#ff3b3b';
+            const container = document.getElementById('errorContainer');
+            container.innerHTML = `<div class="error-box">${message}</div>`;
         }
         
         async function downloadFinalImage() {
             if (!currentJobId) return;
-            
             try {
                 const response = await fetch(`/api/result/${currentJobId}`);
                 const result = await response.json();
-                
                 if (result.final_image) {
                     const link = document.createElement('a');
                     link.href = result.final_image;
-                    link.download = `paperbanana_${currentJobId}.png`;
+                    link.download = `fig_${currentJobId}.png`;
                     document.body.appendChild(link);
                     link.click();
                     document.body.removeChild(link);
                 }
             } catch (error) {
-                console.error('Error downloading image:', error);
-                alert('Failed to download image');
+                alert('Download failed');
             }
         }
     </script>
