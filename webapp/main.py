@@ -135,9 +135,9 @@ async def run_generation(job_id: str, text: str, caption: str, iterations: int):
         jobs[job_id]["status"] = "completed"
         jobs[job_id]["phase"] = "completed"
         jobs[job_id]["progress"] = "Generation completed!"
-        jobs[job_id]["final_image"] = str(output.final_image)
-        jobs[job_id]["iteration_images"] = [str(img) for img in output.iteration_images]
-        jobs[job_id]["run_dir"] = str(pipeline._run_dir)
+        jobs[job_id]["final_image"] = str(output.image_path)
+        jobs[job_id]["iteration_images"] = [str(it.image_path) for it in output.iterations]
+        jobs[job_id]["run_dir"] = str(getattr(pipeline, '_run_dir', output.metadata.get('run_dir', '')))
         
         logger.info("Generation completed", job_id=job_id)
         

@@ -75,7 +75,7 @@ class GoogleImagenGen(ImageGenProvider):
             return "2K"
         return "4K"
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10))
+    @retry(stop=stop_after_attempt(5), wait=wait_exponential(min=5, max=60))
     async def generate(
         self,
         prompt: str,
