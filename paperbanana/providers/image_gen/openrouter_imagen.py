@@ -63,6 +63,17 @@ class OpenRouterImageGen(ImageGenProvider):
     def is_available(self) -> bool:
         return self._api_key is not None
 
+    @staticmethod
+    def _closest_aspect_ratio(width: int, height: int) -> str:
+        """Map pixel dimensions to the closest OpenRouter-supported aspect ratio string."""
+        _RATIOS = [
+            (1, 1), (16, 9), (9, 16), (4, 3), (3, 4),
+            (3, 2), (2, 3), (4, 5), (5, 4), (21, 9),
+        ]
+        target = width / height
+        best = min(_RATIOS, key=lambda r: abs(r[0] / r[1] - target))
+        return f"{best[0]}:{best[1]}"
+
     def _aspect_ratio_hint(self, width: int, height: int) -> str:
         """Turn pixel dimensions into a human-readable aspect ratio hint for the prompt."""
         ratio = width / height
@@ -94,6 +105,9 @@ class OpenRouterImageGen(ImageGenProvider):
         if negative_prompt:
             full_prompt += f"\n\nAvoid: {negative_prompt}"
 
+        # Map pixel dimensions to closest supported aspect ratio
+        aspect_ratio = self._closest_aspect_ratio(width, height)
+
         payload = {
             "model": self._model,
             "messages": [
@@ -101,6 +115,10 @@ class OpenRouterImageGen(ImageGenProvider):
             ],
             # This tells OpenRouter we want an image back, not just text
             "modalities": ["image", "text"],
+            # Required for some models (e.g. gemini-3-pro-image-preview)
+            "image_config": {
+                "aspect_ratio": aspect_ratio,
+            },
         }
 
         if seed is not None:
