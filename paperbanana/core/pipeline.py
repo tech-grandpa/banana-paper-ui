@@ -305,7 +305,7 @@ class PaperBananaPipeline:
             image_provider=getattr(self._image_gen, "name", "custom"),
             image_model=getattr(self._image_gen, "model_name", "custom"),
             refinement_iterations=len(iterations),
-            config_snapshot=self.settings.model_dump(exclude={"google_api_key"}),
+            config_snapshot=self.settings.model_dump(exclude={"google_api_key", "openrouter_api_key"}),
         )
 
         if self.settings.save_iterations:
