@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PaperBanana - Text-to-Diagram Generator</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --orange: #ff6b35;
+            --purple: #1a1a2e;
+            --cream: #f4f1de;
+            --dark-bg: #0f0f1e;
+            --card-bg: #16162a;
+        }
+        
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: linear-gradient(135deg, var(--purple) 0%, var(--dark-bg) 100%);
+            color: var(--cream);
+            min-height: 100vh;
+            padding: 2rem;
+        }
+        
+        h1, h2, h3 {
+            font-family: 'Syne', sans-serif;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+        
+        h1 {
+            font-size: 3.5rem;
+            font-weight: 800;
+            color: var(--orange);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            text-shadow: 0 0 20px rgba(255, 107, 53, 0.5);
+            margin-bottom: 0.5rem;
+        }
+        
+        .subtitle {
+            font-size: 1.2rem;
+            opacity: 0.8;
+            font-weight: 300;
+        }
+        
+        .input-section {
+            background: var(--card-bg);
+            border: 2px solid var(--orange);
+            border-radius: 16px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 8px 32px rgba(255, 107, 53, 0.2);
+        }
+        
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: var(--orange);
+            font-size: 1.1rem;
+        }
+        
+        textarea, input[type="text"], select {
+            width: 100%;
+            background: var(--purple);
+            border: 2px solid rgba(255, 107, 53, 0.3);
+            border-radius: 8px;
+            padding: 1rem;
+            color: var(--cream);
+            font-family: 'Outfit', sans-serif;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+        
+        textarea:focus, input[type="text"]:focus, select:focus {
+            outline: none;
+            border-color: var(--orange);
+            box-shadow: 0 0 0 4px rgba(255, 107, 53, 0.1);
+        }
+        
+        textarea {
+            min-height: 200px;
+            resize: vertical;
+        }
+        
+        select {
+            cursor: pointer;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 1rem;
+            align-items: flex-end;
+        }
+        
+        .controls .form-group {
+            flex: 1;
+            margin-bottom: 0;
+        }
+        
+        button {
+            background: linear-gradient(135deg, var(--orange) 0%, #ff8c5a 100%);
+            border: none;
+            color: var(--purple);
+            padding: 1rem 2.5rem;
+            font-size: 1.2rem;
+            font-weight: 700;
+            font-family: 'Syne', sans-serif;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 16px rgba(255, 107, 53, 0.4);
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(255, 107, 53, 0.6);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .progress-section {
+            background: var(--card-bg);
+            border: 2px solid var(--orange);
+            border-radius: 16px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            display: none;
+        }
+        
+        .progress-section.active {
+            display: block;
+        }
+        
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        
+        .progress-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--orange);
+        }
+        
+        .progress-status {
+            font-size: 1rem;
+            padding: 0.5rem 1rem;
+            background: var(--orange);
+            color: var(--purple);
+            border-radius: 20px;
+            font-weight: 600;
+        }
+        
+        .progress-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+        
+        .progress-item {
+            background: var(--purple);
+            padding: 1rem;
+            border-radius: 8px;
+            border-left: 4px solid var(--orange);
+        }
+        
+        .progress-item-label {
+            font-size: 0.9rem;
+            opacity: 0.7;
+            margin-bottom: 0.25rem;
+        }
+        
+        .progress-item-value {
+            font-size: 1.2rem;
+            font-weight: 600;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: var(--purple);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 1rem;
+        }
+        
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--orange) 0%, #ff8c5a 100%);
+            transition: width 0.3s ease;
+            animation: pulse 2s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+        
+        .results-section {
+            background: var(--card-bg);
+            border: 2px solid var(--orange);
+            border-radius: 16px;
+            padding: 2rem;
+            display: none;
+        }
+        
+        .results-section.active {
+            display: block;
+        }
+        
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+        
+        .results-title {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--orange);
+        }
+        
+        .download-btn {
+            padding: 0.75rem 1.5rem;
+            font-size: 1rem;
+        }
+        
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+        }
+        
+        .result-item {
+            background: var(--purple);
+            border-radius: 12px;
+            overflow: hidden;
+            border: 2px solid rgba(255, 107, 53, 0.3);
+            transition: all 0.3s ease;
+        }
+        
+        .result-item:hover {
+            transform: translateY(-4px);
+            border-color: var(--orange);
+            box-shadow: 0 8px 24px rgba(255, 107, 53, 0.3);
+        }
+        
+        .result-item.final {
+            grid-column: 1 / -1;
+            border-color: var(--orange);
+            box-shadow: 0 8px 32px rgba(255, 107, 53, 0.4);
+        }
+        
+        .result-item img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        
+        .result-item-label {
+            padding: 1rem;
+            font-weight: 600;
+            text-align: center;
+            background: var(--purple);
+        }
+        
+        .result-item.final .result-item-label {
+            background: var(--orange);
+            color: var(--purple);
+            font-size: 1.2rem;
+        }
+        
+        .error-message {
+            background: #ff3b3b;
+            color: white;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-top: 1rem;
+        }
+        
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 2rem;
+            }
+            
+            .controls {
+                flex-direction: column;
+            }
+            
+            .results-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .result-item.final {
+                grid-column: 1;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🍌 Paper Banana</h1>
+            <p class="subtitle">Transform Your Text Into Academic Diagrams</p>
+        </header>
+        
+        <div class="input-section">
+            <div class="form-group">
+                <label for="text">Methodology / Description Text</label>
+                <textarea 
+                    id="text" 
+                    placeholder="Paste your methodology description or paper text here..."
+                    required
+                ></textarea>
+            </div>
+            
+            <div class="form-group">
+                <label for="caption">Caption / Communicative Intent</label>
+                <input 
+                    type="text" 
+                    id="caption" 
+                    placeholder="What should this diagram communicate?"
+                    required
+                />
+            </div>
+            
+            <div class="controls">
+                <div class="form-group">
+                    <label for="iterations">Refinement Iterations</label>
+                    <select id="iterations">
+                        <option value="1">1 iteration</option>
+                        <option value="2">2 iterations</option>
+                        <option value="3" selected>3 iterations</option>
+                        <option value="4">4 iterations</option>
+                        <option value="5">5 iterations</option>
+                    </select>
+                </div>
+                <button id="generateBtn" onclick="startGeneration()">
+                    Generate Diagram
+                </button>
+            </div>
+        </div>
+        
+        <div class="progress-section" id="progressSection">
+            <div class="progress-header">
+                <h2 class="progress-title">Generating...</h2>
+                <span class="progress-status" id="progressStatus">Running</span>
+            </div>
+            
+            <p id="progressMessage" style="margin-bottom: 1rem; font-size: 1.1rem;">Starting generation...</p>
+            
+            <div class="progress-details">
+                <div class="progress-item">
+                    <div class="progress-item-label">Phase</div>
+                    <div class="progress-item-value" id="phaseValue">-</div>
+                </div>
+                <div class="progress-item">
+                    <div class="progress-item-label">Agent</div>
+                    <div class="progress-item-value" id="agentValue">-</div>
+                </div>
+                <div class="progress-item">
+                    <div class="progress-item-label">Iteration</div>
+                    <div class="progress-item-value" id="iterationValue">-</div>
+                </div>
+            </div>
+            
+            <div class="progress-bar">
+                <div class="progress-bar-fill" id="progressBarFill" style="width: 0%"></div>
+            </div>
+        </div>
+        
+        <div class="results-section" id="resultsSection">
+            <div class="results-header">
+                <h2 class="results-title">✨ Results</h2>
+                <button class="download-btn" id="downloadBtn" onclick="downloadFinalImage()">
+                    Download Final
+                </button>
+            </div>
+            <div class="results-grid" id="resultsGrid"></div>
+        </div>
+    </div>
+    
+    <script>
+        let currentJobId = null;
+        let pollInterval = null;
+        
+        async function startGeneration() {
+            const text = document.getElementById('text').value.trim();
+            const caption = document.getElementById('caption').value.trim();
+            const iterations = parseInt(document.getElementById('iterations').value);
+            
+            if (!text || !caption) {
+                alert('Please fill in both text and caption fields.');
+                return;
+            }
+            
+            // Reset UI
+            document.getElementById('progressSection').classList.remove('active');
+            document.getElementById('resultsSection').classList.remove('active');
+            document.getElementById('generateBtn').disabled = true;
+            
+            try {
+                // Start generation
+                const response = await fetch('/api/generate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ text, caption, iterations }),
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to start generation');
+                }
+                
+                const data = await response.json();
+                currentJobId = data.job_id;
+                
+                // Show progress section
+                document.getElementById('progressSection').classList.add('active');
+                
+                // Start polling
+                pollInterval = setInterval(pollStatus, 2000);
+                pollStatus(); // Poll immediately
+                
+            } catch (error) {
+                console.error('Error starting generation:', error);
+                alert('Failed to start generation: ' + error.message);
+                document.getElementById('generateBtn').disabled = false;
+            }
+        }
+        
+        async function pollStatus() {
+            if (!currentJobId) return;
+            
+            try {
+                const response = await fetch(`/api/status/${currentJobId}`);
+                
+                if (!response.ok) {
+                    throw new Error('Failed to fetch status');
+                }
+                
+                const status = await response.json();
+                updateProgress(status);
+                
+                if (status.status === 'completed') {
+                    clearInterval(pollInterval);
+                    await loadResults();
+                    document.getElementById('generateBtn').disabled = false;
+                } else if (status.status === 'failed') {
+                    clearInterval(pollInterval);
+                    showError(status.error);
+                    document.getElementById('generateBtn').disabled = false;
+                }
+                
+            } catch (error) {
+                console.error('Error polling status:', error);
+            }
+        }
+        
+        function updateProgress(status) {
+            // Update status badge
+            const statusBadge = document.getElementById('progressStatus');
+            statusBadge.textContent = status.status.charAt(0).toUpperCase() + status.status.slice(1);
+            
+            // Update progress message
+            const message = status.progress || 'Processing...';
+            document.getElementById('progressMessage').textContent = message;
+            
+            // Update details
+            document.getElementById('phaseValue').textContent = status.phase || '-';
+            document.getElementById('agentValue').textContent = status.agent || '-';
+            
+            if (status.iteration && status.total_iterations) {
+                document.getElementById('iterationValue').textContent = 
+                    `${status.iteration} / ${status.total_iterations}`;
+            } else {
+                document.getElementById('iterationValue').textContent = '-';
+            }
+            
+            // Update progress bar (rough estimate)
+            let progress = 0;
+            if (status.phase === 'planning') {
+                if (status.agent === 'retriever') progress = 10;
+                else if (status.agent === 'planner') progress = 20;
+                else if (status.agent === 'stylist') progress = 30;
+            } else if (status.phase === 'refinement' && status.iteration && status.total_iterations) {
+                const iterProgress = (status.iteration / status.total_iterations) * 60;
+                progress = 30 + iterProgress;
+            } else if (status.phase === 'completed') {
+                progress = 100;
+            }
+            
+            document.getElementById('progressBarFill').style.width = progress + '%';
+        }
+        
+        async function loadResults() {
+            if (!currentJobId) return;
+            
+            try {
+                const response = await fetch(`/api/result/${currentJobId}`);
+                
+                if (!response.ok) {
+                    throw new Error('Failed to fetch results');
+                }
+                
+                const result = await response.json();
+                displayResults(result);
+                
+            } catch (error) {
+                console.error('Error loading results:', error);
+                showError('Failed to load results: ' + error.message);
+            }
+        }
+        
+        function displayResults(result) {
+            const grid = document.getElementById('resultsGrid');
+            grid.innerHTML = '';
+            
+            // Add iteration images
+            result.iteration_images.forEach((url, index) => {
+                const item = document.createElement('div');
+                item.className = 'result-item';
+                item.innerHTML = `
+                    <img src="${url}" alt="Iteration ${index + 1}">
+                    <div class="result-item-label">Iteration ${index + 1}</div>
+                `;
+                grid.appendChild(item);
+            });
+            
+            // Add final image (highlighted)
+            if (result.final_image) {
+                const finalItem = document.createElement('div');
+                finalItem.className = 'result-item final';
+                finalItem.innerHTML = `
+                    <img src="${result.final_image}" alt="Final Diagram">
+                    <div class="result-item-label">🎯 Final Diagram</div>
+                `;
+                grid.appendChild(finalItem);
+            }
+            
+            // Show results section
+            document.getElementById('resultsSection').classList.add('active');
+            
+            // Hide progress section
+            document.getElementById('progressSection').classList.remove('active');
+        }
+        
+        function showError(message) {
+            const progressSection = document.getElementById('progressSection');
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error-message';
+            errorDiv.textContent = 'Error: ' + message;
+            progressSection.appendChild(errorDiv);
+            
+            document.getElementById('progressStatus').textContent = 'Failed';
+            document.getElementById('progressStatus').style.background = '#ff3b3b';
+        }
+        
+        async function downloadFinalImage() {
+            if (!currentJobId) return;
+            
+            try {
+                const response = await fetch(`/api/result/${currentJobId}`);
+                const result = await response.json();
+                
+                if (result.final_image) {
+                    const link = document.createElement('a');
+                    link.href = result.final_image;
+                    link.download = `paperbanana_${currentJobId}.png`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                }
+            } catch (error) {
+                console.error('Error downloading image:', error);
+                alert('Failed to download image');
+            }
+        }
+    </script>
+</body>
+</html>
