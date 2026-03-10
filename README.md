@@ -16,6 +16,10 @@ This fork extends the original PaperBanana with:
 
 The CLI, Python API, MCP server, and evaluation tools from the original project are fully preserved.
 
+<p align="center">
+  <img src="assets/img/web-ui-screenshot.png" alt="Banana Paper UI — Web Interface" width="960"/>
+</p>
+
 ## How It Works
 
 PaperBanana uses a two-phase multi-agent pipeline with 5 specialized agents:
