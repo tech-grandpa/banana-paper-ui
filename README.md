@@ -508,6 +508,28 @@ Scores on 4 dimensions (hierarchical aggregation per the paper):
 - **Primary**: Faithfulness, Readability
 - **Secondary**: Conciseness, Aesthetics
 
+### `paperbanana polish` -- Refine an Existing Figure
+
+Bring your own figure: a VLM audits it against the venue style guide and proposes up to 10 concrete, actionable improvements, then an image-edit capable provider applies them to the original figure (guided edit). Suggestions are printed to the console so you can see exactly what changed.
+
+```bash
+paperbanana polish --input figure.png
+paperbanana polish --input figure.png --venue icml --iterations 2 --output polished.png
+```
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--input` | `-i` | Path to the existing figure image (required) |
+| `--output` | `-o` | Output path (default: `outputs/polish_<timestamp>/final_output.png`) |
+| `--venue` | | Venue style guide: `neurips` (default), `icml`, `acl`, `ieee`, `custom` |
+| `--iterations` | `-n` | Polish rounds; each round suggests and applies improvements on the previous result (default: 1) |
+| `--aspect-ratio` | `-ar` | Target aspect ratio (default: preserve the input figure's ratio) |
+| `--num-candidates` | `-k` | Apply each round's suggestions N times in parallel (1-8) |
+| `--budget` | | Budget cap in USD; polishing stops gracefully when exceeded |
+| `--seed` | | Random seed for reproducible edits |
+
+Requires an image provider that supports guided image edits (Google Gemini image models). If the figure already conforms to the style guide, polish exits without making changes.
+
 ### `paperbanana studio` -- Local web UI
 
 Requires `pip install 'paperbanana[studio]'` (Gradio).

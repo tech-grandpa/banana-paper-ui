@@ -72,6 +72,12 @@ class ImageGenProvider(ABC):
 
     Used by the Visualizer agent to generate methodology diagrams
     and other academic illustrations.
+
+    Guided edits (image-conditioned generation): providers that can edit an
+    existing image declare an additional ``images: Optional[list[Image.Image]]``
+    keyword on ``generate`` (see ``GoogleImagenGen``). Callers detect support
+    by inspecting the provider's ``generate`` signature — the base contract
+    below is text-to-image only.
     """
 
     cost_tracker: CostTracker | None = None

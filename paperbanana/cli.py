@@ -2637,6 +2637,275 @@ def tikz(
 
 
 @app.command()
+def polish(
+    input: str = typer.Option(
+        ..., "--input", "-i", help="Path to the existing figure image to polish"
+    ),
+    output: Optional[str] = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Output image path (default: outputs/polish_<timestamp>/final_output.png)",
+    ),
+    venue: Optional[str] = typer.Option(
+        None,
+        "--venue",
+        help="Target venue style (neurips, icml, acl, ieee, custom)",
+    ),
+    iterations: int = typer.Option(
+        1,
+        "--iterations",
+        "-n",
+        min=1,
+        help="Polish rounds: each round suggests improvements and applies them to the result",
+    ),
+    aspect_ratio: Optional[str] = typer.Option(
+        None,
+        "--aspect-ratio",
+        "-ar",
+        help="Target aspect ratio: 1:1, 2:3, 3:2, 3:4, 4:3, 9:16, 16:9, 21:9 "
+        "(default: preserve the input figure's ratio)",
+    ),
+    vlm_provider: Optional[str] = typer.Option(
+        None, "--vlm-provider", help="VLM provider (gemini)"
+    ),
+    vlm_model: Optional[str] = typer.Option(None, "--vlm-model", help="VLM model name"),
+    image_provider: Optional[str] = typer.Option(
+        None, "--image-provider", help="Image gen provider (must support guided image edits)"
+    ),
+    image_model: Optional[str] = typer.Option(None, "--image-model", help="Image gen model name"),
+    budget: Optional[float] = typer.Option(
+        None,
+        "--budget",
+        help="Budget cap in USD; polishing stops gracefully when exceeded",
+    ),
+    num_candidates: Optional[int] = typer.Option(
+        None,
+        "--num-candidates",
+        "-k",
+        min=1,
+        max=8,
+        help=(
+            "Apply each round's suggestions N times in parallel (1-8); the first "
+            "successful candidate is kept as the primary result"
+        ),
+    ),
+    seed: Optional[int] = typer.Option(
+        None, "--seed", help="Random seed for reproducible image generation"
+    ),
+    config: Optional[str] = typer.Option(None, "--config", help="Path to config YAML file"),
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Show detailed agent progress and timing"
+    ),
+):
+    """Polish an existing figure: style-guided suggestions applied as a guided image edit."""
+    configure_logging(verbose=verbose)
+
+    if venue and venue.lower() not in ("neurips", "icml", "acl", "ieee", "custom"):
+        console.print(
+            f"[red]Error: --venue must be neurips, icml, acl, ieee, or custom. Got: {venue}[/red]"
+        )
+        raise typer.Exit(1)
+
+    input_path = Path(input)
+    if not input_path.exists():
+        console.print(f"[red]Error: Input image not found: {input}[/red]")
+        raise typer.Exit(1)
+
+    from PIL import Image as PILImage
+    from PIL import UnidentifiedImageError
+
+    try:
+        with PILImage.open(input_path) as probe:
+            probe.verify()
+    except (UnidentifiedImageError, OSError, ValueError) as e:
+        console.print(f"[red]Error: Input is not a readable image: {input} ({e})[/red]")
+        raise typer.Exit(1)
+
+    # Build settings — only override values explicitly passed via CLI
+    overrides = {}
+    if vlm_provider:
+        overrides["vlm_provider"] = vlm_provider
+    if vlm_model:
+        overrides["vlm_model"] = vlm_model
+    if image_provider:
+        overrides["image_provider"] = image_provider
+    if image_model:
+        overrides["image_model"] = image_model
+    if budget is not None:
+        overrides["budget_usd"] = budget
+    if num_candidates is not None:
+        overrides["num_candidates"] = num_candidates
+    if seed is not None:
+        overrides["seed"] = seed
+    if venue:
+        overrides["venue"] = venue
+
+    if config:
+        settings = Settings.from_yaml(config, **overrides)
+    else:
+        from dotenv import load_dotenv
+
+        load_dotenv()
+        settings = Settings(**overrides)
+
+    import datetime
+
+    from paperbanana.agents.polish import PolishAgent
+    from paperbanana.core.cost_tracker import CostTracker
+    from paperbanana.core.utils import find_prompt_dir, load_image, save_image
+    from paperbanana.guidelines.methodology import load_methodology_guidelines
+    from paperbanana.providers.registry import ProviderRegistry
+
+    if output:
+        final_path = Path(output)
+        run_dir = ensure_dir(final_path.parent)
+    else:
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_dir = ensure_dir(Path(settings.output_dir) / f"polish_{ts}")
+        final_path = run_dir / "final_output.png"
+
+    vlm = ProviderRegistry.create_vlm(settings)
+    image_gen = ProviderRegistry.create_image_gen(settings)
+
+    if not PolishAgent.supports_guided_edit(image_gen):
+        console.print(
+            f"[red]Error: image provider '{getattr(image_gen, 'name', 'unknown')}' does not "
+            "support guided image editing required by polish mode. "
+            "Use --image-provider google.[/red]"
+        )
+        raise typer.Exit(1)
+
+    cost_tracker = CostTracker(budget=settings.budget_usd)
+    if hasattr(vlm, "cost_tracker"):
+        vlm.cost_tracker = cost_tracker
+    if hasattr(image_gen, "cost_tracker"):
+        image_gen.cost_tracker = cost_tracker
+    cost_tracker.set_agent("polish")
+
+    style_guide = load_methodology_guidelines(settings.guidelines_path, venue=settings.venue)
+
+    agent = PolishAgent(
+        image_gen,
+        vlm,
+        prompt_dir=settings.prompt_dir or find_prompt_dir(),
+        output_dir=str(run_dir),
+        image_quality=settings.image_quality,
+    )
+
+    console.print(
+        Panel.fit(
+            f"[bold]PaperBanana[/bold] - Polish Mode\n\n"
+            f"Input:      {input_path}\n"
+            f"Venue:      {settings.venue}\n"
+            f"Rounds:     {iterations}\n"
+            f"Candidates: {settings.num_candidates}\n"
+            f"Output:     {final_path}",
+            border_style="yellow",
+        )
+    )
+
+    async def _apply_fanned_out(image, suggestions, round_idx: int) -> str:
+        """Fan the apply step out over num_candidates parallel guided edits."""
+        candidates_root = ensure_dir(run_dir / "candidates")
+        tasks = []
+        for k in range(1, settings.num_candidates + 1):
+            cand_dir = ensure_dir(candidates_root / f"cand_{k}")
+            cand_seed = settings.seed + (k - 1) if settings.seed is not None else None
+            tasks.append(
+                agent.apply(
+                    image,
+                    suggestions,
+                    output_path=str(cand_dir / f"polished_iter_{round_idx}.png"),
+                    iteration=round_idx,
+                    aspect_ratio=aspect_ratio,
+                    seed=cand_seed,
+                )
+            )
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        primary: Optional[str] = None
+        for k, res in enumerate(results, start=1):
+            if isinstance(res, BaseException):
+                console.print(f"  [yellow]![/yellow] Candidate {k} failed: {res}")
+            else:
+                console.print(f"  [green]✓[/green] Candidate {k}: {res}")
+                if primary is None:
+                    primary = res
+        if primary is None:
+            raise RuntimeError(f"All {settings.num_candidates} polish candidates failed")
+        return primary
+
+    async def _run() -> tuple[str, int]:
+        current_path = str(input_path)
+        rounds_applied = 0
+        for round_idx in range(1, iterations + 1):
+            image = load_image(current_path)
+            console.print(f"\n  [dim]●[/dim] Round {round_idx}/{iterations}: analyzing figure...")
+            suggestions = await agent.suggest(image, style_guide, iteration=round_idx)
+            if not suggestions:
+                console.print(
+                    f"  [green]✓[/green] Round {round_idx}: no further suggestions — "
+                    "figure already conforms to the style guide"
+                )
+                break
+
+            console.print(f"\n[bold]Round {round_idx} suggestions:[/bold]")
+            for j, suggestion in enumerate(suggestions, start=1):
+                console.print(f"  {j}. {suggestion}")
+
+            console.print("  [dim]●[/dim] Applying suggestions (guided edit)...")
+            if settings.num_candidates > 1:
+                current_path = await _apply_fanned_out(image, suggestions, round_idx)
+            else:
+                current_path = await agent.apply(
+                    image,
+                    suggestions,
+                    output_path=str(run_dir / f"polished_iter_{round_idx}.png"),
+                    iteration=round_idx,
+                    aspect_ratio=aspect_ratio,
+                    seed=settings.seed,
+                )
+            rounds_applied += 1
+
+            if cost_tracker.is_over_budget:
+                console.print(
+                    f"  [yellow]Budget exceeded (${cost_tracker.total_cost:.4f} / "
+                    f"${settings.budget_usd}); stopping after round {round_idx}[/yellow]"
+                )
+                break
+        return current_path, rounds_applied
+
+    try:
+        result_path, rounds_applied = asyncio.run(_run())
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
+
+    if rounds_applied == 0:
+        console.print(
+            "\n[green]Done![/green] No changes applied — "
+            "the figure already matches the style guide."
+        )
+    else:
+        final_image = load_image(result_path)
+        save_image(final_image, str(final_path))
+        console.print(f"\n[green]Done![/green] Polished figure saved to: [bold]{final_path}[/bold]")
+        console.print(f"Rounds applied: {rounds_applied}")
+
+    cost_summary = cost_tracker.summary()
+    if cost_summary["num_vlm_calls"] or cost_summary["num_image_calls"]:
+        console.print(
+            f"  Cost: [bold]${cost_summary['total_usd']:.4f}[/bold]"
+            f" [dim](VLM: ${cost_summary['vlm_usd']:.4f},"
+            f" Image: ${cost_summary['image_usd']:.4f})[/dim]"
+        )
+        if not cost_summary.get("pricing_complete", True):
+            console.print(
+                "  [yellow]Note: Some model prices unknown; actual cost may differ[/yellow]"
+            )
+
+
+@app.command()
 def setup():
     """Interactive setup wizard — get generating in 2 minutes with FREE APIs."""
     console.print(

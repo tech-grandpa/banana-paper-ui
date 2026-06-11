@@ -104,7 +104,16 @@ class GoogleImagenGen(ImageGenProvider):
         seed: Optional[int] = None,
         aspect_ratio: Optional[str] = None,
         quality: Optional[str] = None,
+        images: Optional[list[Image.Image]] = None,
     ) -> Image.Image:
+        """Generate an image; when ``images`` is given, perform a guided edit.
+
+        Args:
+            images: Optional input images used as the edit base. The model
+                receives them alongside the prompt (image-conditioned
+                generation), which is how polish mode applies suggestions
+                to an existing figure.
+        """
         from google.genai import types
 
         self._get_client()
@@ -120,9 +129,10 @@ class GoogleImagenGen(ImageGenProvider):
             ),
         )
 
+        contents = [*images, prompt] if images else prompt
         response = self._client.models.generate_content(
             model=self._model,
-            contents=prompt,
+            contents=contents,
             config=config,
         )
 
