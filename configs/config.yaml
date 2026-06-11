@@ -20,7 +20,9 @@ pipeline:
   # optimize_inputs: true     # Preprocess inputs for better generation
   output_resolution: "2k"   # 1k, 2k, 4k
   diagram_type: methodology  # methodology, statistical_plot
-  # venue: neurips          # Target venue style: neurips, icml, acl, ieee, custom
+  # venue: neurips          # Venue style pack: built-in (neurips, icml, acl, ieee),
+  #                         # a user pack name (see `paperbanana venues list`), or custom
+  # venue_dir: ~/.config/paperbanana/venues  # User venue pack directory override
 
 # Reference set
 reference:

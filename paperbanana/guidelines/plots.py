@@ -97,30 +97,47 @@ Sequential & Heatmaps:
 def load_plot_guidelines(
     guidelines_path: str | None = None,
     venue: str | None = None,
+    venue_dir: str | None = None,
 ) -> str:
     """Load statistical plot style guidelines.
 
     Args:
-        guidelines_path: Base directory for guideline files. If None, uses defaults.
-        venue: Target venue (neurips, icml, acl, ieee). When set to "custom" or
-            None, the loader skips venue subdirectory resolution and looks for
-            files directly under guidelines_path (original behavior).
+        guidelines_path: Base directory for built-in guideline files. If None,
+            uses defaults.
+        venue: Target venue pack name (built-in such as neurips/icml/acl/ieee,
+            or a user pack). When set to "custom" or None, the loader skips
+            venue resolution and looks for files directly under guidelines_path
+            (original behavior). Unknown venue names raise
+            :class:`~paperbanana.guidelines.venues.UnknownVenueError`.
+        venue_dir: User venue directory override (default: PAPERBANANA_VENUE_DIR
+            env var, then ~/.config/paperbanana/venues).
 
     Returns:
         Guidelines text.
     """
+    if venue and venue != "custom":
+        from paperbanana.guidelines.venues import resolve_venue
+
+        pack = resolve_venue(venue, builtin_dir=guidelines_path, extra_dir=venue_dir)
+        if pack.plot_guide_path:
+            logger.info(
+                "Loading plot guidelines",
+                venue=pack.name,
+                source=pack.source,
+                path=str(pack.plot_guide_path),
+            )
+            return pack.plot_guide_path.read_text(encoding="utf-8")
+        if pack.name != "neurips":
+            logger.warning(
+                "Venue pack has no plot_style_guide.md; using built-in defaults",
+                venue=pack.name,
+                pack_dir=str(pack.dir),
+            )
+        return DEFAULT_PLOT_GUIDELINES
+
     if guidelines_path:
-        base = Path(guidelines_path)
-
-        # Try venue-specific path first: {guidelines_path}/{venue}/plot_style_guide.md
-        if venue and venue != "custom":
-            venue_path = base / venue / "plot_style_guide.md"
-            if venue_path.exists():
-                logger.info("Loading plot guidelines", venue=venue, path=str(venue_path))
-                return venue_path.read_text(encoding="utf-8")
-
-        # Fallback to flat path: {guidelines_path}/plot_style_guide.md
-        flat_path = base / "plot_style_guide.md"
+        # Flat path: {guidelines_path}/plot_style_guide.md
+        flat_path = Path(guidelines_path) / "plot_style_guide.md"
         if flat_path.exists():
             logger.info("Loading plot guidelines (flat path)", path=str(flat_path))
             return flat_path.read_text(encoding="utf-8")

@@ -12,7 +12,10 @@ from pydantic_settings import BaseSettings
 OutputFormat = Literal["png", "jpeg", "webp"]
 ImageQuality = Literal["low", "medium", "high", "auto"]
 ExemplarRetrievalMode = Literal["external_only", "external_then_rerank"]
-Venue = Literal["neurips", "icml", "acl", "ieee", "custom"]
+# Venue is an open name resolved against built-in and user style packs at
+# pipeline startup (see paperbanana.guidelines.venues). Kept as an alias for
+# backward compatibility with earlier Literal-based typing.
+Venue = str
 VectorExportMode = Literal["none", "svg", "pdf", "both"]
 
 
@@ -81,6 +84,11 @@ class Settings(BaseSettings):
     exemplar_retrieval_timeout_seconds: float = 20.0
     exemplar_retrieval_max_retries: int = 2
     venue: Venue = "neurips"
+    venue_dir: Optional[str] = Field(
+        default=None,
+        alias="PAPERBANANA_VENUE_DIR",
+        description="User venue style pack directory (default: ~/.config/paperbanana/venues)",
+    )
     vector_export: VectorExportMode = "none"
     num_candidates: int = Field(
         default=1,
@@ -276,13 +284,15 @@ class Settings(BaseSettings):
     @field_validator("venue", mode="before")
     @classmethod
     def validate_venue(cls, v: Any) -> str:
-        """Validate venue is a supported venue name (case-insensitive)."""
+        """Normalize the venue name (case-insensitive).
+
+        Venue names are open: they resolve against built-in and user style
+        packs when the pipeline loads guidelines. Unknown names raise
+        UnknownVenueError (listing available venues) at that point.
+        """
         if v is None:
             return "neurips"
-        v = str(v).lower()
-        if v not in ("neurips", "icml", "acl", "ieee", "custom"):
-            raise ValueError(f"venue must be neurips, icml, acl, ieee, or custom. Got: {v}")
-        return v
+        return str(v).strip().lower()
 
     @classmethod
     def from_yaml(cls, config_path: str | Path, **overrides: Any) -> Settings:
@@ -326,6 +336,7 @@ def _flatten_yaml(config: dict, prefix: str = "") -> dict:
         "reference.category": "reference_category",
         "reference.guidelines_path": "guidelines_path",
         "pipeline.venue": "venue",
+        "pipeline.venue_dir": "venue_dir",
         "pipeline.vector_export": "vector_export",
         "output.dir": "output_dir",
         "output.format": "output_format",

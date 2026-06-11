@@ -299,6 +299,36 @@ paperbanana plot \
 
 Plots are rendered via VLM-generated matplotlib code — no image-generation provider or credentials are required.
 
+### `paperbanana venues` -- Custom Venue Style Packs
+
+`--venue` selects a *venue style pack*: a directory with `methodology_style_guide.md`, `plot_style_guide.md`, and an optional `venue.yaml`. Built-in packs (`neurips`, `icml`, `acl`, `ieee`) ship with PaperBanana; you can add your own under `~/.config/paperbanana/venues/` (override with `--venue-dir` or `PAPERBANANA_VENUE_DIR`) without touching the repo:
+
+```bash
+# 1. Scaffold a pack (seeds both guides from the NeurIPS templates)
+paperbanana venues init mylab
+
+# 2. Edit the style guides — or generate them from a corpus of example figures:
+#    paperbanana guidelines synthesize --reference-set ./examples \
+#      --output ~/.config/paperbanana/venues/mylab/methodology_style_guide.md
+
+# 3. Use it anywhere --venue is accepted
+paperbanana generate --input method.txt --caption "Overview" --venue mylab
+
+# See everything that's available (built-in + user, with source)
+paperbanana venues list
+```
+
+`venue.yaml` (all fields optional):
+
+```yaml
+display_name: "My Lab Style"  # shown by `paperbanana venues list`
+aspect_ratio: "16:9"          # default --aspect-ratio for this venue's runs
+fonts:                        # preferred fonts, appended to the style guides
+  - "Helvetica"
+```
+
+On a name clash, built-in packs win — user packs cannot shadow built-in venues. Unknown venue names fail fast with the list of available packs from both sources.
+
 ### `paperbanana batch` -- Batch Generation
 
 Generate multiple methodology diagrams from a single manifest file (YAML or JSON). Each item runs the full pipeline; outputs are written under `outputs/batch_<id>/run_<id>/` and a `batch_report.json` summarizes all runs.
@@ -418,7 +448,7 @@ Paths are resolved relative to the manifest file’s directory.
 | `--optimize` | | Input optimization per item |
 | `--format` | `-f` | png, jpeg, or webp |
 | `--save-prompts` / `--no-save-prompts` | | Persist prompts (default: on, same as `plot`) |
-| `--venue` | | Venue style (neurips, icml, acl, ieee, custom) |
+| `--venue` | | Venue style pack: built-in (neurips, icml, acl, ieee), a user pack, or `custom` |
 | `--aspect-ratio` | `-ar` | Default aspect ratio when not set in the manifest |
 | `--verbose` | `-v` | Verbose logging |
 

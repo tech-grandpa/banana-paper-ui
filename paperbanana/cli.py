@@ -96,6 +96,25 @@ guidelines_app = typer.Typer(
 )
 app.add_typer(guidelines_app, name="guidelines")
 
+# ── Venues subcommand group ───────────────────────────────────────
+venues_app = typer.Typer(
+    name="venues",
+    help="Manage venue style packs (built-in and user-supplied).",
+    no_args_is_help=True,
+)
+app.add_typer(venues_app, name="venues")
+
+
+def _validate_venue_or_exit(venue: Optional[str], venue_dir: Optional[str] = None) -> None:
+    """Validate a --venue value against built-in and user style packs."""
+    from paperbanana.guidelines.venues import UnknownVenueError, validate_venue
+
+    try:
+        validate_venue(venue, extra_dir=venue_dir)
+    except UnknownVenueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
+
 
 def _require_pdf_dep() -> None:
     """Raise a clean error if PyMuPDF is not installed."""
@@ -385,7 +404,18 @@ def generate(
     venue: Optional[str] = typer.Option(
         None,
         "--venue",
-        help="Target venue style (neurips, icml, acl, ieee, custom)",
+        help=(
+            "Venue style pack: built-in (neurips, icml, acl, ieee), a user pack "
+            "(see 'paperbanana venues list'), or 'custom' (flat guideline files)"
+        ),
+    ),
+    venue_dir: Optional[str] = typer.Option(
+        None,
+        "--venue-dir",
+        help=(
+            "User venue style pack directory "
+            "(default: $PAPERBANANA_VENUE_DIR or ~/.config/paperbanana/venues)"
+        ),
     ),
     export_tikz: bool = typer.Option(
         False,
@@ -442,11 +472,7 @@ def generate(
             "[red]Error: --exemplar-mode must be external_then_rerank or external_only[/red]"
         )
         raise typer.Exit(1)
-    if venue and venue.lower() not in ("neurips", "icml", "acl", "ieee", "custom"):
-        console.print(
-            f"[red]Error: --venue must be neurips, icml, acl, ieee, or custom. Got: {venue}[/red]"
-        )
-        raise typer.Exit(1)
+    _validate_venue_or_exit(venue, venue_dir)
     if vector_export and vector_export.lower() not in ("none", "svg", "pdf", "both"):
         console.print("[red]Error: --vector-export must be none, svg, pdf, or both[/red]")
         raise typer.Exit(1)
@@ -529,6 +555,8 @@ def generate(
         overrides["num_candidates"] = num_candidates
     if venue:
         overrides["venue"] = venue
+    if venue_dir:
+        overrides["venue_dir"] = venue_dir
     if vector_export is not None:
         overrides["vector_export"] = vector_export.lower()
     if prompt_dir:
@@ -1580,7 +1608,10 @@ def batch(
     venue: Optional[str] = typer.Option(
         None,
         "--venue",
-        help="Target venue style (neurips, icml, acl, ieee, custom)",
+        help=(
+            "Venue style pack: built-in (neurips, icml, acl, ieee), a user pack "
+            "(see 'paperbanana venues list'), or 'custom' (flat guideline files)"
+        ),
     ),
     auto_download_data: bool = typer.Option(
         False,
@@ -1606,11 +1637,7 @@ def batch(
     if format not in ("png", "jpeg", "webp"):
         console.print(f"[red]Error: Format must be png, jpeg, or webp. Got: {format}[/red]")
         raise typer.Exit(1)
-    if venue and venue.lower() not in ("neurips", "icml", "acl", "ieee", "custom"):
-        console.print(
-            f"[red]Error: --venue must be neurips, icml, acl, ieee, or custom. Got: {venue}[/red]"
-        )
-        raise typer.Exit(1)
+    _validate_venue_or_exit(venue)
     if max_retries < 0:
         console.print("[red]Error: --max-retries must be >= 0[/red]")
         raise typer.Exit(1)
@@ -1942,7 +1969,10 @@ def orchestrate(
     venue: Optional[str] = typer.Option(
         None,
         "--venue",
-        help="Target venue style (neurips, icml, acl, ieee, custom)",
+        help=(
+            "Venue style pack: built-in (neurips, icml, acl, ieee), a user pack "
+            "(see 'paperbanana venues list'), or 'custom' (flat guideline files)"
+        ),
     ),
     concurrency: int = typer.Option(
         1, "--concurrency", help="Maximum concurrent figure generations"
@@ -1959,11 +1989,7 @@ def orchestrate(
     if format not in ("png", "jpeg", "webp"):
         console.print(f"[red]Error: Format must be png, jpeg, or webp. Got: {format}[/red]")
         raise typer.Exit(1)
-    if venue and venue.lower() not in ("neurips", "icml", "acl", "ieee", "custom"):
-        console.print(
-            f"[red]Error: --venue must be neurips, icml, acl, ieee, or custom. Got: {venue}[/red]"
-        )
-        raise typer.Exit(1)
+    _validate_venue_or_exit(venue)
     if max_method_figures < 1:
         console.print("[red]Error: --max-method-figures must be >= 1[/red]")
         raise typer.Exit(1)
@@ -2172,7 +2198,10 @@ def plot_batch(
     venue: Optional[str] = typer.Option(
         None,
         "--venue",
-        help="Target venue style (neurips, icml, acl, ieee, custom)",
+        help=(
+            "Venue style pack: built-in (neurips, icml, acl, ieee), a user pack "
+            "(see 'paperbanana venues list'), or 'custom' (flat guideline files)"
+        ),
     ),
     aspect_ratio: Optional[str] = typer.Option(
         None,
@@ -2196,11 +2225,7 @@ def plot_batch(
     if format not in ("png", "jpeg", "webp"):
         console.print(f"[red]Error: Format must be png, jpeg, or webp. Got: {format}[/red]")
         raise typer.Exit(1)
-    if venue and venue.lower() not in ("neurips", "icml", "acl", "ieee", "custom"):
-        console.print(
-            f"[red]Error: --venue must be neurips, icml, acl, ieee, or custom. Got: {venue}[/red]"
-        )
-        raise typer.Exit(1)
+    _validate_venue_or_exit(venue)
     if max_retries < 0:
         console.print("[red]Error: --max-retries must be >= 0[/red]")
         raise typer.Exit(1)
@@ -2330,7 +2355,18 @@ def plot(
     venue: Optional[str] = typer.Option(
         None,
         "--venue",
-        help="Target venue style (neurips, icml, acl, ieee, custom)",
+        help=(
+            "Venue style pack: built-in (neurips, icml, acl, ieee), a user pack "
+            "(see 'paperbanana venues list'), or 'custom' (flat guideline files)"
+        ),
+    ),
+    venue_dir: Optional[str] = typer.Option(
+        None,
+        "--venue-dir",
+        help=(
+            "User venue style pack directory "
+            "(default: $PAPERBANANA_VENUE_DIR or ~/.config/paperbanana/venues)"
+        ),
     ),
     cost_only: bool = typer.Option(
         False,
@@ -2366,11 +2402,7 @@ def plot(
     if format not in ("png", "jpeg", "webp"):
         console.print(f"[red]Error: Format must be png, jpeg, or webp. Got: {format}[/red]")
         raise typer.Exit(1)
-    if venue and venue.lower() not in ("neurips", "icml", "acl", "ieee", "custom"):
-        console.print(
-            f"[red]Error: --venue must be neurips, icml, acl, ieee, or custom. Got: {venue}[/red]"
-        )
-        raise typer.Exit(1)
+    _validate_venue_or_exit(venue, venue_dir)
 
     configure_logging(verbose=verbose)
     data_path = Path(data)
@@ -2410,6 +2442,8 @@ def plot(
     overrides["output_format"] = format
     if venue:
         overrides["venue"] = venue
+    if venue_dir:
+        overrides["venue_dir"] = venue_dir
     if budget is not None:
         overrides["budget_usd"] = budget
     if generate_caption:
@@ -2540,7 +2574,10 @@ def tikz(
     venue: Optional[str] = typer.Option(
         None,
         "--venue",
-        help="Target venue style (neurips, icml, acl, ieee, custom)",
+        help=(
+            "Venue style pack: built-in (neurips, icml, acl, ieee), a user pack "
+            "(see 'paperbanana venues list'), or 'custom' (flat guideline files)"
+        ),
     ),
     config: Optional[str] = typer.Option(None, "--config", help="Path to a YAML config file"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed progress"),
@@ -2555,11 +2592,7 @@ def tikz(
         console.print("[red]Error: --diagram-type must be 'diagram' or 'plot'[/red]")
         raise typer.Exit(1)
 
-    if venue and venue.lower() not in ("neurips", "icml", "acl", "ieee", "custom"):
-        console.print(
-            f"[red]Error: --venue must be neurips, icml, acl, ieee, or custom. Got: {venue}[/red]"
-        )
-        raise typer.Exit(1)
+    _validate_venue_or_exit(venue)
 
     configure_logging(verbose=verbose)
 
@@ -4103,6 +4136,149 @@ def guidelines_synthesize(
         console.print(f"  Use it with: [bold]--venue {venue.lower()}[/bold]")
     if cost_tracker is not None:
         console.print(f"  Cost: [bold]${cost_tracker.total_cost:.4f}[/bold]")
+
+
+# ── venues subcommands ─────────────────────────────────────────────
+
+
+_VENUE_YAML_TEMPLATE = """\
+# PaperBanana venue style pack configuration.
+# All fields are optional — delete or comment out anything you don't need.
+
+# Human-readable name shown by `paperbanana venues list`.
+display_name: "{display_name}"
+
+# Default --aspect-ratio for runs with this venue (used when the CLI flag
+# is not passed). One of: 1:1, 2:3, 3:2, 3:4, 4:3, 9:16, 16:9, 21:9.
+# aspect_ratio: "16:9"
+
+# Preferred font families, appended as a note to the style guides.
+# fonts:
+#   - "Helvetica"
+#   - "Arial"
+"""
+
+
+@venues_app.command(name="list")
+def venues_list(
+    venue_dir: Optional[str] = typer.Option(
+        None,
+        "--venue-dir",
+        help=(
+            "User venue style pack directory "
+            "(default: $PAPERBANANA_VENUE_DIR or ~/.config/paperbanana/venues)"
+        ),
+    ),
+):
+    """List available venue style packs (built-in and user)."""
+    from paperbanana.guidelines.venues import (
+        list_venues,
+        load_venue_config,
+        resolve_user_venue_dir,
+    )
+
+    venues = list_venues(extra_dir=venue_dir)
+
+    table = Table(title="Venue Style Packs")
+    table.add_column("Name", style="bold")
+    table.add_column("Source")
+    table.add_column("Display Name")
+    table.add_column("Aspect Ratio")
+    table.add_column("Path", overflow="fold")
+
+    for info in venues.values():
+        try:
+            config = load_venue_config(info.dir)
+        except (ValueError, OSError):
+            config = None
+        table.add_row(
+            info.name,
+            info.source,
+            (config.display_name if config and config.display_name else "—"),
+            (config.aspect_ratio if config and config.aspect_ratio else "—"),
+            str(info.dir),
+        )
+
+    console.print(table)
+    console.print(
+        f"\nUser venue directory: [bold]{resolve_user_venue_dir(venue_dir)}[/bold]\n"
+        "Scaffold a new pack with: [bold]paperbanana venues init <name>[/bold]"
+    )
+
+
+@venues_app.command(name="init")
+def venues_init(
+    name: str = typer.Argument(..., help="Name for the new venue pack (used with --venue)"),
+    venue_dir: Optional[str] = typer.Option(
+        None,
+        "--venue-dir",
+        help=(
+            "User venue style pack directory "
+            "(default: $PAPERBANANA_VENUE_DIR or ~/.config/paperbanana/venues)"
+        ),
+    ),
+):
+    """Scaffold a user venue style pack from the NeurIPS templates."""
+    from paperbanana.guidelines.methodology import load_methodology_guidelines
+    from paperbanana.guidelines.plots import load_plot_guidelines
+    from paperbanana.guidelines.venues import (
+        DEFAULT_BUILTIN_GUIDELINES_DIR,
+        METHODOLOGY_GUIDE_FILENAME,
+        PLOT_GUIDE_FILENAME,
+        RESERVED_VENUE_NAMES,
+        VENUE_CONFIG_FILENAME,
+        list_venues,
+        resolve_user_venue_dir,
+    )
+
+    venue_name = name.strip().lower()
+    if not venue_name or not all(c.isalnum() or c in ("-", "_") for c in venue_name):
+        console.print(
+            f"[red]Error: Invalid venue name '{name}'. "
+            "Use letters, digits, hyphens, and underscores only.[/red]"
+        )
+        raise typer.Exit(1)
+    if venue_name in RESERVED_VENUE_NAMES:
+        console.print(f"[red]Error: Venue name '{venue_name}' is reserved.[/red]")
+        raise typer.Exit(1)
+
+    existing = list_venues(extra_dir=venue_dir)
+    if venue_name in existing:
+        info = existing[venue_name]
+        console.print(
+            f"[red]Error: Venue '{venue_name}' already exists "
+            f"({info.source}: {info.dir}).[/red]\n"
+            "Built-in venues cannot be shadowed; pick a different name."
+        )
+        raise typer.Exit(1)
+
+    target = resolve_user_venue_dir(venue_dir) / venue_name
+    try:
+        target.mkdir(parents=True, exist_ok=False)
+        # Seed both guides from the NeurIPS templates as a starting point.
+        methodology = load_methodology_guidelines(DEFAULT_BUILTIN_GUIDELINES_DIR, venue="neurips")
+        plot = load_plot_guidelines(DEFAULT_BUILTIN_GUIDELINES_DIR, venue="neurips")
+        (target / METHODOLOGY_GUIDE_FILENAME).write_text(methodology, encoding="utf-8")
+        (target / PLOT_GUIDE_FILENAME).write_text(plot, encoding="utf-8")
+        (target / VENUE_CONFIG_FILENAME).write_text(
+            _VENUE_YAML_TEMPLATE.format(display_name=venue_name.upper()),
+            encoding="utf-8",
+        )
+    except OSError as e:
+        console.print(f"[red]Error: Cannot create venue pack at {target} ({e}).[/red]")
+        raise typer.Exit(1)
+
+    console.print(
+        f"[green]Created venue pack:[/green] [bold]{target}[/bold]\n\n"
+        f"  {METHODOLOGY_GUIDE_FILENAME}  — methodology diagram style guide\n"
+        f"  {PLOT_GUIDE_FILENAME}         — statistical plot style guide\n"
+        f"  {VENUE_CONFIG_FILENAME}                  — optional venue metadata\n\n"
+        "Next steps:\n"
+        f"  1. Edit the two style guides (or generate them from example figures "
+        f"with 'paperbanana guidelines synthesize --output {target}/...').\n"
+        f"  2. Adjust {VENUE_CONFIG_FILENAME} (display name, aspect ratio, fonts).\n"
+        f"  3. Use it: [bold]paperbanana generate --venue {venue_name} ...[/bold]"
+    )
 
 
 @app.command()

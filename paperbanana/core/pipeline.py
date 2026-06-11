@@ -52,6 +52,7 @@ from paperbanana.core.utils import (
 )
 from paperbanana.guidelines.methodology import load_methodology_guidelines
 from paperbanana.guidelines.plots import load_plot_guidelines
+from paperbanana.guidelines.venues import VenuePack, resolve_venue, select_aspect_ratio
 from paperbanana.providers.registry import ProviderRegistry
 from paperbanana.reference.exemplar_retrieval import (
     ExemplarRetrievalError,
@@ -223,11 +224,29 @@ class PaperBananaPipeline:
                 max_retries=self.settings.exemplar_retrieval_max_retries,
             )
 
-        # Load guidelines (venue-aware resolution)
+        # Load guidelines (venue-aware resolution: built-in packs, then user packs)
         guidelines_path = self.settings.guidelines_path
         venue = self.settings.venue
-        self._methodology_guidelines = load_methodology_guidelines(guidelines_path, venue=venue)
-        self._plot_guidelines = load_plot_guidelines(guidelines_path, venue=venue)
+        venue_dir = self.settings.venue_dir
+        self._venue_pack: VenuePack | None = None
+        if venue and venue != "custom":
+            self._venue_pack = resolve_venue(
+                venue, builtin_dir=guidelines_path, extra_dir=venue_dir
+            )
+        self._methodology_guidelines = load_methodology_guidelines(
+            guidelines_path, venue=venue, venue_dir=venue_dir
+        )
+        self._plot_guidelines = load_plot_guidelines(
+            guidelines_path, venue=venue, venue_dir=venue_dir
+        )
+        if self._venue_pack and self._venue_pack.config.fonts:
+            font_note = (
+                "\n\n## Venue Font Preferences\n\n"
+                f"Preferred font families for this venue: "
+                f"{', '.join(self._venue_pack.config.fonts)}.\n"
+            )
+            self._methodology_guidelines += font_note
+            self._plot_guidelines += font_note
 
         # Initialize agents
         prompt_dir = self._find_prompt_dir()
@@ -1545,10 +1564,13 @@ class PaperBananaPipeline:
 
         # ── Phase 2: Iterative Refinement ─────────────────────────────
 
-        # Aspect ratio priority: user-specified > planner-recommended > default (None)
-        effective_ratio = input.aspect_ratio or planner_ratio
+        # Aspect ratio priority: user-specified > venue default (venue.yaml)
+        # > planner-recommended > default (None)
+        venue_ratio = self._venue_pack.config.aspect_ratio if self._venue_pack else None
+        effective_ratio, ratio_source = select_aspect_ratio(
+            input.aspect_ratio, venue_ratio, planner_ratio
+        )
         if effective_ratio:
-            ratio_source = "user" if input.aspect_ratio else "planner"
             logger.info(
                 "Using aspect ratio",
                 source=ratio_source,

@@ -783,9 +783,9 @@ def run_orchestration(
         pages_arg = None
 
     cfg = (config_path or "").strip() or None
+    # Venue names (built-in and user packs) are validated downstream by
+    # run_orchestration_package; unknown names raise listing available venues.
     venue_s = (venue or "neurips").strip().lower()
-    if venue_s not in ("neurips", "icml", "acl", "ieee", "custom"):
-        venue_s = "neurips"
 
     max_m = max(1, int(max_method_figures or 1))
     max_p = max(0, int(max_plot_figures or 0))

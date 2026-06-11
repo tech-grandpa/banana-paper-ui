@@ -45,6 +45,13 @@ def _upload_path(file_obj: Any) -> Optional[str]:
     return getattr(file_obj, "name", None) or str(file_obj)
 
 
+def _venue_choices() -> list[str]:
+    """Available venue style packs (built-in and user) plus 'custom'."""
+    from paperbanana.guidelines.venues import list_venues
+
+    return sorted(list_venues()) + ["custom"]
+
+
 def build_studio_app(
     *,
     default_output_dir: str = "outputs",
@@ -745,7 +752,7 @@ def build_studio_app(
                     )
                     o_venue = gr.Dropdown(
                         label="Venue style",
-                        choices=["neurips", "icml", "acl", "ieee", "custom"],
+                        choices=_venue_choices(),
                         value="neurips",
                     )
                 with gr.Row():

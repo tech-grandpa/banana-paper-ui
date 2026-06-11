@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 import yaml
-from pydantic import ValidationError
 
 from paperbanana.core.config import Settings
 from paperbanana.guidelines.methodology import (
@@ -18,6 +17,7 @@ from paperbanana.guidelines.plots import (
     DEFAULT_PLOT_GUIDELINES,
     load_plot_guidelines,
 )
+from paperbanana.guidelines.venues import UnknownVenueError
 
 # ── Settings & Validation ────────────────────────────────────────────
 
@@ -38,9 +38,10 @@ class TestVenueSettings:
         settings = Settings(venue="ICML")
         assert settings.venue == "icml"
 
-    def test_invalid_venue_rejected(self):
-        with pytest.raises(ValidationError, match="venue must be neurips"):
-            Settings(venue="cvpr")
+    def test_arbitrary_venue_names_accepted_and_normalized(self):
+        """Venue names are open (user packs); validation happens at resolution."""
+        settings = Settings(venue="  MyLab ")
+        assert settings.venue == "mylab"
 
     def test_venue_from_yaml(self):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
@@ -92,10 +93,11 @@ class TestMethodologyGuidelinesLoader:
         result = load_methodology_guidelines(str(guidelines_tree), venue="icml")
         assert result == "icml-methodology"
 
-    def test_falls_back_to_flat_path(self, guidelines_tree):
-        """When venue subdir is missing, fall back to flat file."""
-        result = load_methodology_guidelines(str(guidelines_tree), venue="unknown_venue")
-        assert result == "flat-methodology"
+    def test_unknown_venue_raises(self, guidelines_tree, monkeypatch, tmp_path):
+        """Unknown venues raise instead of silently falling back to flat files."""
+        monkeypatch.setenv("PAPERBANANA_VENUE_DIR", str(tmp_path / "empty_user_dir"))
+        with pytest.raises(UnknownVenueError, match="Unknown venue 'unknown_venue'"):
+            load_methodology_guidelines(str(guidelines_tree), venue="unknown_venue")
 
     def test_custom_venue_uses_flat_path(self, guidelines_tree):
         """venue='custom' skips venue subdirectory resolution."""
@@ -106,8 +108,9 @@ class TestMethodologyGuidelinesLoader:
         result = load_methodology_guidelines(str(guidelines_tree), venue=None)
         assert result == "flat-methodology"
 
-    def test_no_path_returns_hardcoded_default(self):
-        result = load_methodology_guidelines(None, venue="icml")
+    def test_no_path_returns_hardcoded_default(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
+        result = load_methodology_guidelines(None, venue="neurips")
         assert result == DEFAULT_METHODOLOGY_GUIDELINES
 
     def test_missing_directory_returns_hardcoded_default(self):
@@ -127,9 +130,10 @@ class TestPlotGuidelinesLoader:
         result = load_plot_guidelines(str(guidelines_tree), venue="ieee")
         assert result == "ieee-plot"
 
-    def test_falls_back_to_flat_path(self, guidelines_tree):
-        result = load_plot_guidelines(str(guidelines_tree), venue="unknown_venue")
-        assert result == "flat-plot"
+    def test_unknown_venue_raises(self, guidelines_tree, monkeypatch, tmp_path):
+        monkeypatch.setenv("PAPERBANANA_VENUE_DIR", str(tmp_path / "empty_user_dir"))
+        with pytest.raises(UnknownVenueError, match="Unknown venue 'unknown_venue'"):
+            load_plot_guidelines(str(guidelines_tree), venue="unknown_venue")
 
     def test_custom_venue_uses_flat_path(self, guidelines_tree):
         result = load_plot_guidelines(str(guidelines_tree), venue="custom")
@@ -139,8 +143,9 @@ class TestPlotGuidelinesLoader:
         result = load_plot_guidelines(str(guidelines_tree), venue=None)
         assert result == "flat-plot"
 
-    def test_no_path_returns_hardcoded_default(self):
-        result = load_plot_guidelines(None, venue="acl")
+    def test_no_path_returns_hardcoded_default(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
+        result = load_plot_guidelines(None, venue="neurips")
         assert result == DEFAULT_PLOT_GUIDELINES
 
     def test_missing_directory_returns_hardcoded_default(self):

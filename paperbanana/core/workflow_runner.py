@@ -30,6 +30,7 @@ from paperbanana.core.plot_data import load_statistical_plot_payload
 from paperbanana.core.source_loader import load_methodology_source
 from paperbanana.core.types import DiagramType, GenerationInput
 from paperbanana.core.utils import ensure_dir
+from paperbanana.guidelines.venues import validate_venue
 
 logger = structlog.get_logger()
 
@@ -91,8 +92,7 @@ def run_methodology_batch(
     manifest_path = Path(manifest_path).resolve()
     if format not in ("png", "jpeg", "webp"):
         raise ValueError(f"Format must be png, jpeg, or webp. Got: {format}")
-    if venue and venue.lower() not in ("neurips", "icml", "acl", "ieee", "custom"):
-        raise ValueError(f"venue must be neurips, icml, acl, ieee, or custom. Got: {venue}")
+    validate_venue(venue)
     if max_retries < 0:
         raise ValueError("max_retries must be >= 0")
     if concurrency < 1:
@@ -335,8 +335,7 @@ def run_plot_batch(
     manifest_path = Path(manifest_path).resolve()
     if format not in ("png", "jpeg", "webp"):
         raise ValueError(f"Format must be png, jpeg, or webp. Got: {format}")
-    if venue and venue.lower() not in ("neurips", "icml", "acl", "ieee", "custom"):
-        raise ValueError(f"venue must be neurips, icml, acl, ieee, or custom. Got: {venue}")
+    validate_venue(venue)
     if max_retries < 0:
         raise ValueError("max_retries must be >= 0")
     if concurrency < 1:
@@ -550,8 +549,7 @@ def run_orchestration_package(
     is_resume = bool(resume_orchestrate)
     if format not in ("png", "jpeg", "webp"):
         raise ValueError(f"Format must be png, jpeg, or webp. Got: {format}")
-    if venue and venue.lower() not in ("neurips", "icml", "acl", "ieee", "custom"):
-        raise ValueError(f"venue must be neurips, icml, acl, ieee, or custom. Got: {venue}")
+    validate_venue(venue)
     if max_method_figures < 1:
         raise ValueError("max_method_figures must be >= 1")
     if max_plot_figures < 0:
