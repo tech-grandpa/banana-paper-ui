@@ -116,6 +116,38 @@ class ReferenceExample(BaseModel):
     structure_hints: Optional[dict[str, Any] | list[Any] | str] = None
 
 
+class TestCase(BaseModel):
+    """A single entry from the official PaperBananaBench test split.
+
+    Mirrors the upstream ``test.json`` schema (292 diagram / 240 plot entries)
+    so benchmark runs are comparable to the paper (arXiv:2601.23265).
+    """
+
+    id: str
+    task: Literal["diagram", "plot"] = Field(
+        default="diagram", description="Benchmark task this case belongs to"
+    )
+    category: str = ""
+    source_context: str = Field(
+        description="Methodology text (diagram) or JSON-encoded data table (plot)"
+    )
+    caption: str = Field(default="", description="Official visual_intent for the entry")
+    gt_image_path: str = Field(description="Path to the ground-truth (human-drawn) image")
+    aspect_ratio: Optional[str] = Field(
+        default=None,
+        description="Official rounded_ratio from additional_info (e.g. '16:9')",
+    )
+    raw_data: Optional[dict[str, Any]] = Field(
+        default=None, description="Raw data table for plot entries"
+    )
+    gt_code: Optional[str] = Field(
+        default=None, description="Ground-truth matplotlib code (plot entries only)"
+    )
+    difficulty: Optional[str] = Field(
+        default=None, description="Official difficulty label (plot entries only)"
+    )
+
+
 class CritiqueResult(BaseModel):
     """Output from the Critic agent."""
 

@@ -409,3 +409,84 @@ class TestResolveImageUnicode:
         images = tmp_path / "images"
         images.mkdir()
         assert _resolve_image(images, "nope.jpg") is None
+
+
+class TestOfficialTestSplit:
+    """Import + load round-trip for the official test split (issue #235)."""
+
+    def _make_bench_dir(self, tmp_path):
+        import json
+
+        bench = tmp_path / "PaperBananaBench"
+        for task in ("diagram", "plot"):
+            (bench / task / "images").mkdir(parents=True)
+        (bench / "diagram" / "images" / "fig1.jpg").write_bytes(b"img1")
+        (bench / "diagram" / "test.json").write_text(
+            json.dumps(
+                [
+                    {
+                        "id": "d1",
+                        "category": "vision",
+                        "content": "methodology text",
+                        "visual_intent": "Overview figure",
+                        "path_to_gt_image": "fig1.jpg",
+                        "split": "test",
+                        "additional_info": {"rounded_ratio": "16:9", "width": 1600, "height": 900},
+                    }
+                ]
+            ),
+            encoding="utf-8",
+        )
+        (bench / "plot" / "images" / "p1.jpg").write_bytes(b"img2")
+        (bench / "plot" / "test.json").write_text(
+            json.dumps(
+                [
+                    {
+                        "id": "p1",
+                        "category": "bar",
+                        "content": {"x": [1, 2], "y": [3, 4]},
+                        "visual_intent": "Bar chart",
+                        "path_to_gt_image": "p1.jpg",
+                        "difficulty": "easy",
+                        "additional_info": {"rounded_ratio": "3:2", "gt_code": "plt.bar(x, y)"},
+                    }
+                ]
+            ),
+            encoding="utf-8",
+        )
+        return bench
+
+    def test_import_and_load_round_trip(self, tmp_path):
+        from paperbanana.data.manager import DatasetManager, _import_test_split
+
+        bench = self._make_bench_dir(tmp_path)
+        dm = DatasetManager(cache_dir=tmp_path / "cache")
+        count = _import_test_split(bench, "both", dm.test_split_dir)
+        assert count == 2
+
+        diagram_cases = dm.load_test_split("diagram")
+        assert len(diagram_cases) == 1
+        case = diagram_cases[0]
+        assert case.id == "d1"
+        assert case.aspect_ratio == "16:9"
+        assert case.task == "diagram"
+        assert Path(case.gt_image_path).exists()
+
+        plot_cases = dm.load_test_split("plot")
+        assert plot_cases[0].gt_code == "plt.bar(x, y)"
+        assert plot_cases[0].difficulty == "easy"
+        assert plot_cases[0].raw_data == {"x": [1, 2], "y": [3, 4]}
+
+    def test_load_missing_split_raises_with_hint(self, tmp_path):
+        from paperbanana.data.manager import DatasetManager
+
+        dm = DatasetManager(cache_dir=tmp_path / "cache")
+        with pytest.raises(RuntimeError, match="data download"):
+            dm.load_test_split("diagram")
+
+    def test_load_rejects_unknown_task(self, tmp_path):
+        from paperbanana.data.manager import DatasetManager
+
+        dm = DatasetManager(cache_dir=tmp_path / "cache")
+        with pytest.raises(ValueError, match="diagram"):
+            dm.load_test_split("poster")
