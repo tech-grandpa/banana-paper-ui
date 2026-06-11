@@ -2218,8 +2218,13 @@ def plot(
     data: str = typer.Option(..., "--data", "-d", help="Path to data file (CSV or JSON)"),
     intent: str = typer.Option(..., "--intent", help="Communicative intent for the plot"),
     output: Optional[str] = typer.Option(None, "--output", "-o", help="Output image path"),
-    vlm_provider: str = typer.Option("gemini", "--vlm-provider", help="VLM provider"),
-    iterations: int = typer.Option(3, "--iterations", "-n", help="Number of refinement iterations"),
+    vlm_provider: Optional[str] = typer.Option(
+        None, "--vlm-provider", help="VLM provider (gemini, openai)"
+    ),
+    vlm_model: Optional[str] = typer.Option(None, "--vlm-model", help="VLM model name"),
+    iterations: Optional[int] = typer.Option(
+        None, "--iterations", "-n", help="Number of refinement iterations"
+    ),
     format: str = typer.Option(
         "png",
         "--format",
@@ -2240,6 +2245,9 @@ def plot(
     ),
     auto: bool = typer.Option(
         False, "--auto", help="Let critic loop until satisfied (max 30 iterations)"
+    ),
+    max_iterations: Optional[int] = typer.Option(
+        None, "--max-iterations", help="Safety cap for --auto mode (default: 30)"
     ),
     save_prompts: Optional[bool] = typer.Option(
         None,
@@ -2279,6 +2287,7 @@ def plot(
         "--vector/--no-vector",
         help="Also export SVG and PDF vector formats alongside the raster output.",
     ),
+    config: Optional[str] = typer.Option(None, "--config", help="Path to config YAML file"),
 ):
     """Generate a statistical plot from data."""
     if format not in ("png", "jpeg", "webp"):
@@ -2304,23 +2313,46 @@ def plot(
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
 
-    from dotenv import load_dotenv
+    overrides = {}
+    # Plots are rendered via VLM-generated matplotlib code; the image-gen
+    # provider is never invoked, so "none" avoids demanding credentials
+    # the workflow doesn't use (see DummyImageGen).
+    overrides["image_provider"] = "none"
+    if vlm_provider:
+        overrides["vlm_provider"] = vlm_provider
+    if vlm_model:
+        overrides["vlm_model"] = vlm_model
+    if iterations is not None:
+        overrides["refinement_iterations"] = iterations
+    if auto:
+        overrides["auto_refine"] = True
+    if max_iterations is not None:
+        overrides["max_iterations"] = max_iterations
+    if optimize:
+        overrides["optimize_inputs"] = True
+    # Plot runs save prompts by default (parity with prior behavior on main).
+    overrides["save_prompts"] = True if save_prompts is None else save_prompts
+    if output:
+        overrides["output_dir"] = str(Path(output).parent)
+    overrides["output_format"] = format
+    if venue:
+        overrides["venue"] = venue
+    if budget is not None:
+        overrides["budget_usd"] = budget
+    if generate_caption:
+        overrides["generate_caption"] = True
+    if vector:
+        overrides["vector_export"] = True
+    if export_pgfplots:
+        overrides["export_pgfplots"] = True
 
-    load_dotenv()
+    if config:
+        settings = Settings.from_yaml(config, **overrides)
+    else:
+        from dotenv import load_dotenv
 
-    settings = Settings(
-        vlm_provider=vlm_provider,
-        refinement_iterations=iterations,
-        output_format=format,
-        optimize_inputs=optimize,
-        auto_refine=auto,
-        save_prompts=True if save_prompts is None else save_prompts,
-        venue=venue,
-        budget_usd=budget,
-        generate_caption=generate_caption,
-        export_pgfplots=export_pgfplots,
-        vector_export=vector,
-    )
+        load_dotenv()
+        settings = Settings(**overrides)
 
     gen_input = GenerationInput(
         source_context=source_context,
@@ -2352,11 +2384,18 @@ def plot(
         console.print(Panel.fit("\n".join(lines), border_style="green"))
         return
 
+    if auto:
+        iter_label = f"auto (max {settings.max_iterations})"
+    else:
+        iter_label = str(settings.refinement_iterations)
+
     console.print(
         Panel.fit(
             f"[bold]PaperBanana[/bold] - Generating Statistical Plot\n\n"
             f"Data: {data_path.name}\n"
-            f"Intent: {intent}",
+            f"Intent: {intent}\n"
+            f"VLM: {settings.vlm_provider} / {settings.effective_vlm_model}\n"
+            f"Iterations: {iter_label}",
             border_style="green",
         )
     )

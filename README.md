@@ -270,6 +270,10 @@ paperbanana plot \
 | `--intent` | | Communicative intent for the plot (required) |
 | `--output` | `-o` | Output image path |
 | `--iterations` | `-n` | Refinement iterations (default: 3) |
+| `--vlm-provider` | | VLM provider name |
+| `--vlm-model` | | VLM model name |
+
+Plots are rendered via VLM-generated matplotlib code — no image-generation provider or credentials are required.
 
 ### `paperbanana batch` -- Batch Generation
 
