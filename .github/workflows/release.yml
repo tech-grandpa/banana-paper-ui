@@ -48,7 +48,22 @@ jobs:
           OUT=$(/tmp/verify-venv/bin/paperbanana --version)
           echo "$OUT"
           echo "$OUT" | grep -q "paperbanana ${GITHUB_REF_NAME#v}"
-          /tmp/verify-venv/bin/paperbanana generate --help | grep -q -- "--budget"
+          # Introspect the click command tree instead of grepping rendered
+          # help text — rich truncates flag names at narrow console widths.
+          /tmp/verify-venv/bin/python - <<'PY'
+          import typer.main
+
+          from paperbanana.cli import app
+
+          cmd = typer.main.get_command(app)
+          gen = cmd.commands["generate"]
+          flags = {opt for param in gen.params for opt in param.opts}
+          required = {"--budget", "--optimize", "--format", "--export-tikz"}
+          missing = required - flags
+          if missing:
+              raise SystemExit(f"wheel CLI is stale — missing flags: {sorted(missing)}")
+          print("CLI flags verified:", sorted(required))
+          PY
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
