@@ -135,3 +135,36 @@ def test_ratio_to_dimensions_supports_high_resolution_landscape():
 
 def test_ratio_to_dimensions_supports_2k_landscape():
     assert VisualizerAgent._ratio_to_dimensions("16:9", output_resolution="2k") == (2048, 1152)
+
+
+# ── Sketch-guided prompt note ─────────────────────────────────────────────────
+
+
+class _CapturingImageGen:
+    def __init__(self):
+        self.captured = {}
+
+    async def generate(self, prompt, **kwargs):
+        from PIL import Image
+
+        self.captured["prompt"] = prompt
+        return Image.new("RGB", (8, 8), color=(255, 255, 255))
+
+
+async def test_generate_diagram_notes_user_sketch_when_guided(tmp_path):
+    """sketch_guided=True adds a one-line mention to the diagram prompt."""
+    from paperbanana.core.utils import find_prompt_dir
+
+    gen = _CapturingImageGen()
+    agent = VisualizerAgent(
+        image_gen=gen,
+        vlm_provider=_DummyVLM(),
+        prompt_dir=find_prompt_dir(),
+        output_dir=str(tmp_path),
+    )
+
+    await agent.run(description="a diagram description", sketch_guided=True)
+    assert "user-provided reference sketch" in gen.captured["prompt"]
+
+    await agent.run(description="a diagram description")
+    assert "user-provided reference sketch" not in gen.captured["prompt"]

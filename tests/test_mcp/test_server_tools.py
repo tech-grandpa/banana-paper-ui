@@ -53,3 +53,31 @@ def test_no_unexpected_tools():
 def test_every_tool_has_description():
     undocumented = [t.name for t in _list_tools() if not (t.description or "").strip()]
     assert not undocumented, f"MCP tools without descriptions: {undocumented}"
+
+
+def test_generate_diagram_exposes_input_images_param():
+    """generate_diagram accepts optional input_images (reference/sketch paths)."""
+    tool = next(t for t in _list_tools() if t.name == "generate_diagram")
+    assert "input_images" in tool.parameters.get("properties", {})
+
+
+def test_validate_input_images_rejects_missing_and_non_raster(tmp_path):
+    from mcp_server.server import _validate_input_images
+
+    # Missing file
+    with pytest.raises(ValueError, match="not found"):
+        _validate_input_images([str(tmp_path / "missing.png")])
+
+    # Non-raster file with image extension
+    fake = tmp_path / "fake.png"
+    fake.write_text("not an image", encoding="utf-8")
+    with pytest.raises(ValueError, match="raster image"):
+        _validate_input_images([str(fake)])
+
+    # Valid tiny PNG passes
+    from PIL import Image
+
+    real = tmp_path / "real.png"
+    Image.new("RGB", (2, 2), color=(255, 0, 0)).save(real)
+    assert _validate_input_images([str(real)]) == [str(real)]
+    assert _validate_input_images(None) == []

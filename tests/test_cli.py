@@ -1405,3 +1405,124 @@ def test_continue_run_missing_path_reports_resolved_path(tmp_path):
     assert result.exit_code == 1
     assert "Run directory not found" in flat
     assert "run_x" in flat
+
+
+# ── --image (reference/sketch) flag tests ─────────────────────────────────────
+
+
+def _strip_ansi(output: str) -> str:
+    """Strip ANSI color escapes so assertions are stable under rich/CI."""
+    import re
+
+    return re.sub(r"\x1b\[[0-9;]*m", "", output)
+
+
+def _write_png(path: Path, size=(4, 4)) -> Path:
+    from PIL import Image
+
+    Image.new("RGB", size, color=(0, 0, 255)).save(path)
+    return path
+
+
+def test_generate_image_flag_round_trip(tmp_path, monkeypatch):
+    """Repeatable --image paths propagate into GenerationInput.input_images."""
+    import paperbanana.core.types as types_mod
+
+    captured: dict[str, object] = {}
+    real_init = types_mod.GenerationInput.__init__
+
+    def _spy_init(self, **kwargs):
+        captured.update(kwargs)
+        real_init(self, **kwargs)
+
+    monkeypatch.setattr(types_mod.GenerationInput, "__init__", _spy_init)
+
+    input_path = tmp_path / "method.txt"
+    input_path.write_text("Sample methodology text for testing.", encoding="utf-8")
+    sketch1 = _write_png(tmp_path / "sketch1.png")
+    sketch2 = _write_png(tmp_path / "sketch2.png")
+
+    result = runner.invoke(
+        app,
+        [
+            "generate",
+            "--input",
+            str(input_path),
+            "--caption",
+            "test",
+            "--image",
+            str(sketch1),
+            "--image",
+            str(sketch2),
+            "--dry-run",
+        ],
+    )
+
+    output = _strip_ansi(result.output)
+    assert result.exit_code == 0
+    assert captured["input_images"] == [str(sketch1), str(sketch2)]
+    assert "Reference images:" in output
+
+
+def test_generate_image_flag_missing_file_errors(tmp_path):
+    """--image with a nonexistent path fails before the pipeline starts."""
+    input_path = tmp_path / "method.txt"
+    input_path.write_text("Sample methodology text for testing.", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "generate",
+            "--input",
+            str(input_path),
+            "--caption",
+            "test",
+            "--image",
+            str(tmp_path / "missing_sketch.png"),
+            "--dry-run",
+        ],
+    )
+
+    output = _strip_ansi(result.output)
+    assert result.exit_code == 1
+    assert "Image file not found" in output
+
+
+def test_generate_image_flag_rejects_non_raster_file(tmp_path):
+    """--image with a non-image file (e.g. text with .png extension) errors clearly."""
+    input_path = tmp_path / "method.txt"
+    input_path.write_text("Sample methodology text for testing.", encoding="utf-8")
+    fake_image = tmp_path / "fake.png"
+    fake_image.write_text("this is not an image", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "generate",
+            "--input",
+            str(input_path),
+            "--caption",
+            "test",
+            "--image",
+            str(fake_image),
+            "--dry-run",
+        ],
+    )
+
+    output = _strip_ansi(result.output)
+    assert result.exit_code == 1
+    assert "Not a valid raster image" in output
+
+
+def test_generate_image_flag_rejected_with_continue(tmp_path):
+    """--image cannot be combined with --continue / --continue-run."""
+    sketch = _write_png(tmp_path / "sketch.png")
+
+    result = runner.invoke(
+        app,
+        ["generate", "--continue", "--image", str(sketch)],
+    )
+
+    output = _strip_ansi(result.output)
+    assert result.exit_code == 1
+    assert "--image cannot be used with --continue" in output
