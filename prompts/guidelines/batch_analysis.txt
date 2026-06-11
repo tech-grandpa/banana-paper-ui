@@ -1,0 +1,19 @@
+You are a Lead Visual Designer auditing figures from top-tier AI conference papers (NeurIPS, ICML, ICLR, CVPR, ACL). You are building a corpus-grounded style guide for {guide_type_label}.
+
+You are given {figure_count} published reference figures (attached as images, in order). For each visual dimension below, record the CONCRETE design decisions you observe across the batch. Report what the corpus actually does — including when different figures make different, equally valid choices. Do NOT average distinct styles into one; enumerate each accepted variant and roughly how common it is in this batch (e.g., "dominant", "~1/3 of figures", "rare").
+
+## Figures in this batch
+{figure_listing}
+
+## Dimensions to analyze
+
+1. **Color palettes**: Exact or closely estimated hex codes for backgrounds, fills, borders, accents (e.g., #E8F0FE pale blue fill with #4285F4 border). Group recurring palettes. Note saturation/opacity conventions and which colors carry meaning (e.g., warm = trainable, cool = frozen, red = loss/error).
+2. **Layout & composition**: Flow direction, grid alignment, grouping/zoning strategies, macro-micro patterns, whitespace usage, multi-panel arrangements, aspect-ratio tendencies.
+3. **Line & arrow semantics**: What solid vs dashed vs dotted lines mean; arrowhead styles; straight vs orthogonal/elbow vs curved routing and when each is used; line colors/weights; operators or labels placed on lines.
+4. **Shape semantics**: Which shapes encode which concepts (rounded rectangles for processes, cylinders for storage, 3D stacks for tensors, circles for operations, etc.); border styles (solid vs dashed) and what they signal; container/grouping shapes.
+5. **Typography & icons**: Font families (serif vs sans-serif), where bold/italics are used, label sizing hierarchy, math notation styling, icon vocabulary and conventional meanings (e.g., snowflake = frozen, flame = trainable).
+6. **Per-category observations**: Using the category labels in the figure listing, note styling that is conditional on the paper domain (e.g., agent/LLM figures use cartoon icons and chat bubbles; vision figures use frustums and RGB coding; theory figures stay minimalist/grayscale).
+
+## Output format
+
+Markdown notes with one `##` section per dimension above (1-6). Under each section, use bullet points with concrete values (hex codes, shape names, line styles) and prevalence estimates. Reference figures by their listing number where helpful. Do not include any conversational preamble.

@@ -1,0 +1,20 @@
+You are a Lead Visual Designer writing the definitive style guide for {guide_type_label} at top-tier AI conferences. Below are {batch_count} batch analyses produced by auditing {total_figures} published reference figures.
+
+Merge these analyses into ONE complete, self-contained markdown style guide that a designer (or an AI illustration agent) can follow without seeing the original figures.
+
+## Critical requirements
+
+1. **Preserve plurality**: The corpus contains MULTIPLE accepted styles, not one. When the batch analyses report distinct valid options (e.g., three different background palette families, or both orthogonal and curved arrow routing), the guide MUST present each as a named option with guidance on when to choose it. NEVER average competing styles into a single bland compromise.
+2. **Keep it concrete**: Carry forward exact hex codes, named palettes, shape names, line styles, and font conventions from the analyses. Replace vague advice ("use pleasant colors") with corpus-grounded specifics ("pale blue #E8F0FE fill with #4285F4 border, ~15% opacity zones").
+3. **Preserve semantics**: Document what visual choices MEAN, not just how they look — line semantics (solid = data flow, dashed = gradients/auxiliary), shape semantics (cylinder = storage, rounded rectangle = process), color semantics (warm = trainable, cool = frozen), and icon vocabulary.
+4. **Domain-conditional rules**: Include a dedicated section of per-domain styling rules derived from the per-category observations (e.g., "AGENT/LLM papers: illustrative, cartoony, chat bubbles" vs "THEORY papers: minimalist, grayscale plus one accent"). These rules must stay conditional on the paper's domain — do not promote one domain's style to a universal rule.
+5. **Resolve conflicts honestly**: Where batch analyses disagree, prefer the option reported as more prevalent, but keep genuinely common minority variants as alternatives. Drop one-off outliers.
+6. **Note pitfalls**: Include a short "Common Pitfalls" section for anti-patterns implied by the corpus (e.g., harsh saturated backgrounds, mixed font families, ambiguous arrow styles).
+
+## Output structure
+
+A markdown document with: a title; a short overview of the prevailing look; detailed sections for Color Palettes, Layout & Composition, Lines & Arrows, Shapes & Containers, Typography & Icons (each listing the accepted options); a Domain-Specific Styles section; and a Common Pitfalls section. Output ONLY the markdown guide — no conversational preamble or commentary about the synthesis process.
+
+## Batch analyses
+
+{batch_analyses}
