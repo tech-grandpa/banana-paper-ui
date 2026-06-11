@@ -317,6 +317,18 @@ class TestDownloadCurated:
 class TestFullBenchMerge:
     """Downloading full_bench after curated must preserve curated-only entries."""
 
+    @staticmethod
+    def _make_bench_zip(zip_dest: Path):
+        """Create a minimal fake PaperBananaBench.zip (no network).
+
+        Only the top-level ``PaperBananaBench/`` directory matters here —
+        the actual import is stubbed via ``_import_from_bench``.
+        """
+        import zipfile
+
+        with zipfile.ZipFile(zip_dest, "w") as zf:
+            zf.writestr("PaperBananaBench/.keep", "")
+
     def test_full_bench_preserves_curated_entries(self, tmp_cache):
         """Curated entries that are NOT in full_bench survive a full import."""
         # Seed cache with curated-only entries
@@ -348,9 +360,15 @@ class TestFullBenchMerge:
             {"id": "bench_new", "category": "bench_cat"},
         ]
 
-        with patch(
-            "paperbanana.data.manager._import_from_bench",
-            return_value=bench_examples,
+        def fake_download(url, dest):
+            self._make_bench_zip(dest)
+
+        with (
+            patch("paperbanana.data.manager._download_file", side_effect=fake_download),
+            patch(
+                "paperbanana.data.manager._import_from_bench",
+                return_value=bench_examples,
+            ),
         ):
             count = tmp_cache.download(dataset="full_bench", force=True)
 

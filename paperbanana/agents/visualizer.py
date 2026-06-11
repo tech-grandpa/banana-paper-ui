@@ -216,7 +216,7 @@ class VisualizerAgent(BaseAgent):
         # Save generated code for inspection / manual editing
         code_path = Path(output_path).with_suffix(".py")
         code_path.parent.mkdir(parents=True, exist_ok=True)
-        code_path.write_text(code)
+        code_path.write_text(code, encoding="utf-8")
         logger.info("Plot code saved", path=str(code_path))
 
         # Execute the code
@@ -308,7 +308,9 @@ class VisualizerAgent(BaseAgent):
         # Ensure output directory exists
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".py", delete=False, encoding="utf-8"
+        ) as f:
             f.write(full_code)
             temp_path = f.name
 
