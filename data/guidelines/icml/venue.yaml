@@ -1,4 +1,6 @@
 display_name: "ICML"
-# ICML is two-column; column-width figures favor compact ratios.
+# ICML is two-column (3.25 in columns); column-width figures favor compact ratios.
 aspect_ratio: "4:3"
-fonts: ["Helvetica", "Arial"]
+# The ICML style kit mandates 10 pt Times for the paper body
+# (icml2026.sty loads the LaTeX `times` package).
+fonts: ["Times New Roman", "Times"]

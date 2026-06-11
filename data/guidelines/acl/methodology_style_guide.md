@@ -1,5 +1,25 @@
 # ACL Method Diagram Aesthetics Guide
 
+## Venue Format Facts (grounded)
+
+* **Layout:** Two-column. Column width 7.7 cm, with 0.6 cm between
+  columns and a column height of 24.7 cm. Wide figures may run across
+  both columns (~16.0 cm full text width).
+* **Body font:** 11 pt Times Roman (Times New Roman or Computer Modern
+  Roman if Times Roman is unavailable).
+* **Captions:** 10 pt roman type, placed below the figure, in the form
+  "Figure 1: Caption of the Figure." One-line captions are centered;
+  longer captions are left-aligned.
+* **Color/accessibility (official wording):** "To accommodate people who
+  are color-blind (as well as those printing with black-and-white
+  printers), grayscale readability is strongly encouraged. Color is not
+  forbidden, but authors should ensure that tables and figures do not
+  rely solely on color to convey critical distinctions."
+* **Margins:** All figures must fit within the page margins (2.5 cm on
+  all sides).
+
+---
+
 ## 1. The "ACL Look"
 
 ACL diagrams reflect the NLP community's preference for **narrative
@@ -104,3 +124,13 @@ the text examples embedded in diagrams.*
 **Retrieval-Augmented Generation:**
 * Document retrieval shown as a search step with ranked results.
 * Retrieved passages flowing into the generation module.
+
+---
+
+## Sources
+
+Venue format facts verified against the official ACL style files and
+ACLPUB formatting guidelines, accessed 2026-06-11:
+
+* https://github.com/acl-org/acl-style-files (formatting.md)
+* https://acl-org.github.io/ACLPUB/formatting.html

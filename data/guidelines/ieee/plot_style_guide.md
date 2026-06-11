@@ -1,5 +1,28 @@
 # IEEE Statistical Plot Aesthetics Guide
 
+## Venue Format Facts (grounded)
+
+* **Layout:** Two-column. One column width is 3.5 inches (88.9 mm /
+  21 picas); figures spanning both columns are 7.16 inches (182 mm /
+  43 picas) wide. Large figures may span both columns but must not
+  extend into the page margins.
+* **Body font:** 10 pt Times Roman / Times New Roman (a proportional
+  serif typeface).
+* **Captions:** Placed below figures (table heads go above tables).
+  "Fig." is abbreviated with a period after the figure number. Captions
+  and figure text are set in 8 pt type.
+* **Figure labels:** The IEEE conference template specifies 8 pt
+  Times New Roman for figure labels; use words rather than symbols or
+  abbreviations for axis labels, with units in parentheses (e.g.,
+  "Magnetization (A/m)") — do not label axes only with units.
+* **Resolution:** Greater than 300 dpi for color/grayscale images and
+  greater than 600 dpi for black-and-white line art; acceptable vector
+  formats are PS, EPS, and PDF.
+* **Placement:** Figures and tables go at the top or bottom of columns;
+  avoid placing them in the middle of columns.
+
+---
+
 ## 1. The "IEEE Look"
 
 IEEE plots follow a **formal, print-first** aesthetic. Since many IEEE
@@ -26,13 +49,15 @@ labeling, high contrast, and conservative decoration.
 * **Grid lines:** Light grey dotted or dashed lines. Subtle but present.
 * **Spines:** Full box (all four sides) is the IEEE convention.
 * **Tick marks:** Inward-facing ticks on all active axes.
-* **Axis labels:** Include units in parentheses, e.g., "Frequency (Hz)".
-  Sans-serif font, matching the paper body.
+* **Axis labels:** Include units in parentheses, e.g., "Frequency (Hz)" —
+  never units alone. Use words rather than symbols or abbreviations.
+  Times New Roman, matching the paper body.
 
 ### **Layout & Typography**
 
-* **Font:** Sans-serif (Arial, Helvetica). Match the paper typeface.
-  Minimum 8 pt at final print size.
+* **Font:** Times New Roman, matching the IEEE body typeface — the
+  official conference template sets figure labels in 8 pt Times New
+  Roman, and captions/figure text in 8 pt type.
 * **Legends:** Boxed legends inside the plot area, or below the figure.
   Include line style and marker descriptions, not just color swatches.
 * **Figure numbering:** IEEE uses "Fig. 1." format in captions.
@@ -77,3 +102,14 @@ labeling, high contrast, and conservative decoration.
 * **Inconsistent figure style** across the paper.
 * **3D effects or shadows** — IEEE style is strictly flat and clean.
 * **Missing panel labels** in multi-panel figures.
+
+---
+
+## Sources
+
+Venue format facts verified against official IEEE author resources,
+accessed 2026-06-11:
+
+* https://journals.ieeeauthorcenter.ieee.org/create-your-ieee-journal-article/create-graphics-for-your-article/resolution-and-size/
+* https://www.overleaf.com/latex/templates/ieee-conference-template/grfzhhncsfqn (official IEEE conference template, via https://www.ieee.org/conferences/publishing/templates)
+* https://ieee-pes.org/publications/authors-kit/preparation-of-a-formatted-technical-work/

@@ -1,5 +1,27 @@
 # IEEE Method Diagram Aesthetics Guide
 
+## Venue Format Facts (grounded)
+
+* **Layout:** Two-column. One column width is 3.5 inches (88.9 mm /
+  21 picas); figures spanning both columns are 7.16 inches (182 mm /
+  43 picas) wide. Large figures may span both columns but must not
+  extend into the page margins.
+* **Body font:** 10 pt Times Roman / Times New Roman (a proportional
+  serif typeface).
+* **Captions:** Placed below figures (table heads go above tables).
+  "Fig." is abbreviated with a period after the figure number. Captions
+  and figure text are set in 8 pt type.
+* **Figure labels:** The IEEE conference template specifies 8 pt
+  Times New Roman for figure labels; use words rather than symbols or
+  abbreviations for axis labels.
+* **Resolution:** Greater than 300 dpi for color/grayscale images and
+  greater than 600 dpi for black-and-white line art; acceptable vector
+  formats are PS, EPS, and PDF.
+* **Placement:** Figures and tables go at the top or bottom of columns;
+  avoid placing them in the middle of columns.
+
+---
+
 ## 1. The "IEEE Look"
 
 IEEE diagrams follow a **formal, engineering-oriented** aesthetic.
@@ -60,8 +82,9 @@ supplementary, not the sole differentiator.*
 
 ### **D. Typography & Icons**
 
-* **Labels:** Sans-serif (Arial, Helvetica) or the paper's body font.
-  All caps for major subsystem names is common.
+* **Labels:** The paper's body font (Times New Roman / Times Roman) is
+  the safe default — the IEEE conference template sets figure labels in
+  8 pt Times New Roman. All caps for major subsystem names is common.
 * **Signal labels:** Placed directly on or adjacent to arrows.
 * **Math:** LaTeX-style variables in serif italic, consistent with
   equation numbering in the paper.
@@ -112,3 +135,14 @@ supplementary, not the sole differentiator.*
 * Network architecture as a linear chain of labeled blocks.
 * Keep the ML diagram style but with sharper corners, less color,
   and more formal labeling than NeurIPS or ICML conventions.
+
+---
+
+## Sources
+
+Venue format facts verified against official IEEE author resources,
+accessed 2026-06-11:
+
+* https://journals.ieeeauthorcenter.ieee.org/create-your-ieee-journal-article/create-graphics-for-your-article/resolution-and-size/
+* https://www.overleaf.com/latex/templates/ieee-conference-template/grfzhhncsfqn (official IEEE conference template, via https://www.ieee.org/conferences/publishing/templates)
+* https://ieee-pes.org/publications/authors-kit/preparation-of-a-formatted-technical-work/

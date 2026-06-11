@@ -410,5 +410,7 @@ class TestBuiltinVenueConfigs:
             assert pack.config.aspect_ratio == "4:3", f"{name} should default to 4:3"
 
     def test_font_preferences_loaded(self):
-        assert resolve_venue("icml").config.fonts == ["Helvetica", "Arial"]
-        assert resolve_venue("ieee").config.fonts == ["Arial", "Helvetica"]
+        """Fonts mirror each venue's real body typeface (Times across the board)."""
+        assert resolve_venue("icml").config.fonts == ["Times New Roman", "Times"]
+        assert resolve_venue("ieee").config.fonts == ["Times New Roman", "Times Roman"]
+        assert resolve_venue("acl").config.fonts == ["Times New Roman", "Times Roman"]

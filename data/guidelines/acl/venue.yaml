@@ -1,3 +1,6 @@
 display_name: "ACL"
-# ACL *ACL venues are two-column; compact figures read better.
+# ACL *ACL venues are two-column (7.7 cm columns); compact figures read better.
 aspect_ratio: "4:3"
+# ACL style files mandate 11 pt Times Roman for the body
+# (Times New Roman or Computer Modern Roman if unavailable).
+fonts: ["Times New Roman", "Times Roman"]
