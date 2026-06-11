@@ -59,7 +59,7 @@ An agentic framework for generating publication-quality academic diagrams and st
 Atlas Cloud is a full-modal AI inference platform that gives developers a single AI API to access video generation, image generation, and LLM APIs. Instead of managing multiple vendor integrations, you connect once and get unified access to 300+ curated models across all modalities.
 
 Check out Atlas Cloud's new coding plan promotion for more budget-friendly API access:
-[https://www.atlascloud.ai/console/coding-plan](https://www.atlascloud.ai/console/coding-plan)
+[https://www.atlascloud.ai/console/coding-plan](https://www.atlascloud.ai/console/coding-plan?utm_source=github&utm_medium=link&utm_campaign=paperbanana)
 
 ---
 
@@ -213,7 +213,7 @@ Recommended Atlas LLM models for `ATLASCLOUD_VLM_MODEL`:
 - `google/gemini-2.5-flash`
 - `anthropic/claude-sonnet-4.5-20250929`
 
-These are stable, generally available models verified against the Atlas Cloud API. The full, always-current model pool (300+ models) is documented on Atlas Cloud's own docs — see [https://www.atlascloud.ai/models](https://www.atlascloud.ai/models) — and any model id listed there can be passed via `ATLASCLOUD_VLM_MODEL`.
+These are stable, generally available models verified against the Atlas Cloud API. The full, always-current model pool (300+ models) is documented on Atlas Cloud's own docs — see [https://www.atlascloud.ai/models](https://www.atlascloud.ai/models?utm_source=github&utm_medium=link&utm_campaign=paperbanana) — and any model id listed there can be passed via `ATLASCLOUD_VLM_MODEL`.
 
 Recommended Atlas image models for `ATLASCLOUD_IMAGE_MODEL`:
 
