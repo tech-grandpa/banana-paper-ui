@@ -741,6 +741,8 @@ class PaperBananaPipeline:
                     "openai_api_key",
                     "openrouter_api_key",
                     "anthropic_api_key",
+                    "atlascloud_api_key",
+                    "litellm_api_key",
                 }
             ),
         )
@@ -1438,6 +1440,8 @@ class PaperBananaPipeline:
                     "openai_api_key",
                     "openrouter_api_key",
                     "anthropic_api_key",
+                    "atlascloud_api_key",
+                    "litellm_api_key",
                 }
             ),
         )
@@ -1826,6 +1830,8 @@ class PaperBananaPipeline:
                     "openai_api_key",
                     "openrouter_api_key",
                     "anthropic_api_key",
+                    "atlascloud_api_key",
+                    "litellm_api_key",
                 }
             ),
         )

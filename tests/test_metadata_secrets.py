@@ -50,6 +50,8 @@ async def test_api_keys_are_excluded_from_metadata_config_snapshot(tmp_path):
         openai_api_key="openai-secret",
         openrouter_api_key="openrouter-secret",
         anthropic_api_key="anthropic-secret",
+        atlascloud_api_key="atlas-secret",
+        litellm_api_key="litellm-secret",
     )
     vlm = _MockVLM(["Plan", "Style", _critic_satisfied()])
     pipeline = PaperBananaPipeline(
@@ -68,6 +70,8 @@ async def test_api_keys_are_excluded_from_metadata_config_snapshot(tmp_path):
         "openai_api_key",
         "openrouter_api_key",
         "anthropic_api_key",
+        "atlascloud_api_key",
+        "litellm_api_key",
     ):
         assert key not in config_snapshot
 
@@ -79,8 +83,11 @@ async def test_api_keys_are_excluded_from_metadata_config_snapshot(tmp_path):
         "openai_api_key",
         "openrouter_api_key",
         "anthropic_api_key",
+        "atlascloud_api_key",
+        "litellm_api_key",
     ):
         assert key not in saved_config_snapshot
 
     serialized_metadata = metadata_path.read_text(encoding="utf-8")
-    assert "anthropic-secret" not in serialized_metadata
+    for secret in ("anthropic-secret", "atlas-secret", "litellm-secret"):
+        assert secret not in serialized_metadata
