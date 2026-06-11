@@ -41,6 +41,8 @@ def estimate_cost(
     else:
         iterations = settings.refinement_iterations
 
+    num_candidates = max(1, getattr(settings, "num_candidates", 1))
+
     # Count expected API calls
     vlm_calls = 0
     image_calls = 0
@@ -75,10 +77,12 @@ def estimate_cost(
     if diagram_type == DiagramType.METHODOLOGY and ve != "none":
         breakdown["structurer"] = _vlm_cost("structurer")
 
-    # Phase 2: Iterative refinement
+    # Phase 2: Iterative refinement. Multi-candidate fan-out runs Phase 2
+    # once per candidate (Phase 1 planning is shared), so visualizer and
+    # critic costs scale by num_candidates.
     vis_total = 0.0
     critic_total = 0.0
-    for _ in range(iterations):
+    for _ in range(iterations * num_candidates):
         if diagram_type == DiagramType.STATISTICAL_PLOT:
             vis_total += _vlm_cost("visualizer_vlm")
         else:
@@ -98,11 +102,17 @@ def estimate_cost(
             f"Auto-refine: estimated for max {iterations} iterations; "
             "actual cost may be lower if critic is satisfied early"
         )
+    if num_candidates > 1:
+        notes.append(
+            f"Multi-candidate: visualizer/critic costs scaled by "
+            f"{num_candidates} parallel candidates"
+        )
 
     return {
         "estimated_total_usd": round(total, 6),
         "vlm_calls": vlm_calls,
         "image_calls": image_calls,
+        "num_candidates": num_candidates,
         "breakdown_by_agent": {k: round(v, 6) for k, v in breakdown.items()},
         "pricing_note": "; ".join(notes) if notes else None,
     }

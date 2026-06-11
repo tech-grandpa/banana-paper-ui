@@ -314,6 +314,17 @@ def generate(
         "--budget",
         help="Budget cap in USD; pipeline aborts gracefully when exceeded",
     ),
+    num_candidates: Optional[int] = typer.Option(
+        None,
+        "--num-candidates",
+        "-k",
+        min=1,
+        max=8,
+        help=(
+            "Generate N candidate images in parallel (1-8). Planning runs once; "
+            "the Visualizer-Critic refinement fans out per candidate"
+        ),
+    ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
@@ -514,6 +525,8 @@ def generate(
         overrides["seed"] = seed
     if budget is not None:
         overrides["budget_usd"] = budget
+    if num_candidates is not None:
+        overrides["num_candidates"] = num_candidates
     if venue:
         overrides["venue"] = venue
     if vector_export is not None:
@@ -728,6 +741,10 @@ def generate(
             f"Image: {settings.image_provider} / {settings.effective_image_model}",
             f"Iterations: {iter_est}",
             f"Optimize: {'yes' if settings.optimize_inputs else 'no'}",
+        ]
+        if settings.num_candidates > 1:
+            lines.append(f"Candidates: {settings.num_candidates} (parallel)")
+        lines += [
             "",
             f"Estimated VLM calls: {estimate['vlm_calls']}",
             f"Estimated image calls: {estimate['image_calls']}",
@@ -765,13 +782,16 @@ def generate(
     else:
         iter_label = str(settings.refinement_iterations)
 
+    candidates_label = (
+        f"\nCandidates: {settings.num_candidates} (parallel)" if settings.num_candidates > 1 else ""
+    )
     if not progress_json:
         console.print(
             Panel.fit(
                 f"[bold]PaperBanana[/bold] - Generating Methodology Diagram\n\n"
                 f"VLM: {settings.vlm_provider} / {settings.effective_vlm_model}\n"
                 f"Image: {settings.image_provider} / {settings.effective_image_model}\n"
-                f"Iterations: {iter_label}",
+                f"Iterations: {iter_label}{candidates_label}",
                 border_style="blue",
             )
         )
@@ -856,9 +876,10 @@ def generate(
                         else " [green]✓[/green]"
                     )
             elif event.stage == PipelineProgressStage.VISUALIZER_START:
-                if event.iteration == 1:
-                    console.print("[bold]Phase 2[/bold] — Iterative Refinement")
                 extra = event.extra or {}
+                candidate = extra.get("candidate")
+                if event.iteration == 1 and candidate in (None, 1):
+                    console.print("[bold]Phase 2[/bold] — Iterative Refinement")
                 total = extra.get("total_iterations", 0)
                 if event.iteration and total:
                     label = f"{event.iteration}/{total}"
@@ -866,6 +887,8 @@ def generate(
                     label = str(event.iteration or "")
                 if settings.auto_refine:
                     label += " (auto)"
+                if candidate is not None:
+                    label = f"cand {candidate} · {label}"
                 console.print(f"  [dim]●[/dim] Generating image [{label}]...", end="")
             elif event.stage == PipelineProgressStage.VISUALIZER_END:
                 console.print(
@@ -927,6 +950,14 @@ def generate(
         f" · {len(result.iterations)} iterations[/dim]\n"
     )
     console.print(f"  Output: [bold]{result.image_path}[/bold]")
+    for cand in result.metadata.get("candidates") or []:
+        if cand.get("error"):
+            console.print(
+                f"  Candidate {cand['index']}: [yellow]failed[/yellow] "
+                f"[dim]{str(cand['error'])[:120]}[/dim]"
+            )
+        elif cand.get("image_path"):
+            console.print(f"  Candidate {cand['index']}: {cand['image_path']}")
     if result.tikz_path:
         console.print(f"  TikZ:   [bold]{result.tikz_path}[/bold]")
     elif settings.export_tikz:

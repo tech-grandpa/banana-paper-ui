@@ -329,3 +329,35 @@ class TestCostEstimator:
         result = estimate_cost(settings)
         assert result["pricing_note"] is not None
         assert "unknown" in result["pricing_note"].lower()
+
+    def test_multi_candidate_scales_phase2_costs(self):
+        from paperbanana.core.config import Settings
+
+        base_kwargs = dict(
+            vlm_provider="openai",
+            vlm_model="gpt-5.2",
+            image_provider="openai_imagen",
+            image_model="gpt-image-1.5",
+            refinement_iterations=3,
+        )
+        single = estimate_cost(Settings(**base_kwargs))
+        multi = estimate_cost(Settings(**base_kwargs, num_candidates=4))
+
+        # Image (visualizer) and critic calls scale by N; Phase-1 planning
+        # calls (retriever, planner, stylist) do not.
+        assert multi["num_candidates"] == 4
+        assert multi["image_calls"] == single["image_calls"] * 4
+        phase1_calls = single["vlm_calls"] - 3  # 3 critic calls in single run
+        assert multi["vlm_calls"] == phase1_calls + 3 * 4
+        assert multi["breakdown_by_agent"]["visualizer"] == pytest.approx(
+            single["breakdown_by_agent"]["visualizer"] * 4
+        )
+        assert multi["breakdown_by_agent"]["critic"] == pytest.approx(
+            single["breakdown_by_agent"]["critic"] * 4
+        )
+        assert multi["breakdown_by_agent"]["planner"] == pytest.approx(
+            single["breakdown_by_agent"]["planner"]
+        )
+        assert multi["estimated_total_usd"] > single["estimated_total_usd"]
+        assert "multi-candidate" in multi["pricing_note"].lower()
+        assert single["num_candidates"] == 1

@@ -82,6 +82,12 @@ class Settings(BaseSettings):
     exemplar_retrieval_max_retries: int = 2
     venue: Venue = "neurips"
     vector_export: VectorExportMode = "none"
+    num_candidates: int = Field(
+        default=1,
+        ge=1,
+        le=8,
+        description="Number of parallel Phase-2 candidate branches (1-8)",
+    )
 
     # Reference settings
     reference_set_path: str = "data/reference_sets"
@@ -309,6 +315,7 @@ def _flatten_yaml(config: dict, prefix: str = "") -> dict:
         "pipeline.optimize_inputs": "optimize_inputs",
         "pipeline.output_resolution": "output_resolution",
         "pipeline.seed": "seed",
+        "pipeline.num_candidates": "num_candidates",
         "pipeline.exemplar_retrieval_enabled": "exemplar_retrieval_enabled",
         "pipeline.exemplar_retrieval_endpoint": "exemplar_retrieval_endpoint",
         "pipeline.exemplar_retrieval_mode": "exemplar_retrieval_mode",
