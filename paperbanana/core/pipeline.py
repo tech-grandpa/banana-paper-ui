@@ -407,6 +407,67 @@ class PaperBananaPipeline:
 
         return final_output_path
 
+    async def _visualize_with_rollback(
+        self,
+        *,
+        iteration: int,
+        rollback_to: Optional[int],
+        run_dir: Path,
+        **visualizer_kwargs: Any,
+    ) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
+        """Run the visualizer for one refinement iteration, rolling back on failure.
+
+        When the visualizer fails after retries (or returns no image) and a
+        previous best image exists (``rollback_to`` is not ``None``), the
+        failure is logged and recorded, and ``(None, rollback_info)`` is
+        returned so the caller stops the loop and keeps the previous best
+        image as the final output.  Without a prior image (first round) the
+        exception propagates, preserving existing error behavior.
+        """
+        try:
+            image_path = await _call_with_retry(
+                "visualizer",
+                self.visualizer.run,
+                iteration=iteration,
+                **visualizer_kwargs,
+            )
+            if not image_path:
+                raise RuntimeError("Visualizer returned no image path")
+        except Exception as e:
+            if rollback_to is None:
+                raise
+            rollback_info: Dict[str, Any] = {
+                "rollback_occurred": True,
+                "failed_iteration": iteration,
+                "rolled_back_to_iteration": rollback_to,
+                "stage": "visualizer",
+                "error": str(e),
+            }
+            logger.warning(
+                "Visualizer failed after retries; rolling back to previous best image",
+                iteration=iteration,
+                rolled_back_to_iteration=rollback_to,
+                error=str(e),
+            )
+            self._emit_progress(
+                "visualizer_rollback",
+                iteration=iteration,
+                rolled_back_to_iteration=rollback_to,
+                error=str(e),
+            )
+            if self.settings.save_iterations:
+                save_json(
+                    {
+                        "failed": True,
+                        "stage": "visualizer",
+                        "error": str(e),
+                        "rolled_back_to_iteration": rollback_to,
+                    },
+                    ensure_dir(run_dir / f"iter_{iteration}") / "failure.json",
+                )
+            return None, rollback_info
+        return image_path, None
+
     def _effective_vector_export(self, input: GenerationInput) -> str:
         """Resolve vector export mode from input override or settings."""
         if input.vector_export is not None:
@@ -553,6 +614,7 @@ class PaperBananaPipeline:
         current_description = format_diagram_ir_for_regeneration(diagram_ir)
         iterations: list[IterationRecord] = []
         iteration_timings: list[dict[str, float | int]] = []
+        rollback_info: Optional[Dict[str, Any]] = None
         budget_exceeded = self._check_budget("before regenerate-from-ir iterations")
         vector_formats = ["svg", "pdf"] if self.settings.vector_export else None
         total_iters = (
@@ -595,18 +657,32 @@ class PaperBananaPipeline:
                 ),
             )
             visualizer_start = time.perf_counter()
-            image_path = await _call_with_retry(
-                "visualizer",
-                self.visualizer.run,
+            image_path, rollback_info = await self._visualize_with_rollback(
+                iteration=iter_index,
+                rollback_to=iterations[-1].iteration if iterations else None,
+                run_dir=self._run_dir,
                 description=current_description,
                 diagram_type=DiagramType.METHODOLOGY,
                 raw_data=None,
-                iteration=iter_index,
                 seed=self.settings.seed,
                 aspect_ratio=aspect_ratio,
                 vector_formats=vector_formats,
             )
             visualizer_seconds = time.perf_counter() - visualizer_start
+            if image_path is None:
+                _emit_progress(
+                    progress_callback,
+                    PipelineProgressEvent(
+                        stage=PipelineProgressStage.VISUALIZER_END,
+                        message=(
+                            f"Visualizer iteration {iter_index} failed; keeping previous best image"
+                        ),
+                        seconds=visualizer_seconds,
+                        iteration=iter_index,
+                        extra={"rollback": True, "error": rollback_info["error"]},
+                    ),
+                )
+                break
             _emit_progress(
                 progress_callback,
                 PipelineProgressEvent(
@@ -758,6 +834,8 @@ class PaperBananaPipeline:
             "locked_edges": len(diagram_ir.locks.locked_edge_refs),
             "locked_groups": len(diagram_ir.locks.locked_group_ids),
         }
+        if rollback_info is not None:
+            metadata_dict["rollback"] = rollback_info
         if generated_caption is not None:
             metadata_dict["generated_caption"] = generated_caption
         if self._cost_tracker:
@@ -1107,6 +1185,7 @@ class PaperBananaPipeline:
         current_description = optimized_description
         iterations: list[IterationRecord] = []
         iteration_timings = []
+        rollback_info: Optional[Dict[str, Any]] = None
         vector_formats = ["svg", "pdf"] if self.settings.vector_export != "none" else None
 
         if self.settings.auto_refine:
@@ -1146,18 +1225,32 @@ class PaperBananaPipeline:
                 ),
             )
             visualizer_start = time.perf_counter()
-            image_path = await _call_with_retry(
-                "visualizer",
-                self.visualizer.run,
+            image_path, rollback_info = await self._visualize_with_rollback(
+                iteration=iter_index,
+                rollback_to=iterations[-1].iteration if iterations else None,
+                run_dir=self._run_dir,
                 description=current_description,
                 diagram_type=input.diagram_type,
                 raw_data=input.raw_data,
-                iteration=iter_index,
                 seed=self.settings.seed,
                 aspect_ratio=effective_ratio,
                 vector_formats=vector_formats,
             )
             visualizer_seconds = time.perf_counter() - visualizer_start
+            if image_path is None:
+                _emit_progress(
+                    progress_callback,
+                    PipelineProgressEvent(
+                        stage=PipelineProgressStage.VISUALIZER_END,
+                        message=(
+                            f"Visualizer iteration {iter_index} failed; keeping previous best image"
+                        ),
+                        seconds=visualizer_seconds,
+                        iteration=iter_index,
+                        extra={"rollback": True, "error": rollback_info["error"]},
+                    ),
+                )
+                break
             _emit_progress(
                 progress_callback,
                 PipelineProgressEvent(
@@ -1464,6 +1557,8 @@ class PaperBananaPipeline:
             "external_enabled": self.settings.exemplar_retrieval_enabled,
             "external_candidate_ids": external_candidate_ids,
         }
+        if rollback_info is not None:
+            metadata_dict["rollback"] = rollback_info
         if generated_caption is not None:
             metadata_dict["generated_caption"] = generated_caption
         if ir_planner_status is not None:
@@ -1566,6 +1661,7 @@ class PaperBananaPipeline:
         iterations: list[IterationRecord] = []
         iteration_timings = []
         budget_exceeded = False
+        rollback_info: Optional[Dict[str, Any]] = None
         vector_formats = ["svg", "pdf"] if self.settings.vector_export != "none" else None
 
         for i in range(total_iters):
@@ -1596,19 +1692,40 @@ class PaperBananaPipeline:
                     extra={"total_iterations": total_iters},
                 ),
             )
+            if iterations:
+                rollback_to = iterations[-1].iteration
+            elif resume_state.last_image_path:
+                # The run being continued already produced an image.
+                rollback_to = start_iter
+            else:
+                rollback_to = None
             visualizer_start = time.perf_counter()
-            image_path = await _call_with_retry(
-                "visualizer",
-                self.visualizer.run,
+            image_path, rollback_info = await self._visualize_with_rollback(
+                iteration=iter_num,
+                rollback_to=rollback_to,
+                run_dir=run_dir,
                 description=current_description,
                 diagram_type=resume_state.diagram_type,
                 raw_data=resume_state.raw_data,
-                iteration=iter_num,
                 seed=self.settings.seed,
                 aspect_ratio=resume_state.aspect_ratio,
                 vector_formats=vector_formats,
             )
             visualizer_seconds = time.perf_counter() - visualizer_start
+            if image_path is None:
+                _emit_progress(
+                    progress_callback,
+                    PipelineProgressEvent(
+                        stage=PipelineProgressStage.VISUALIZER_END,
+                        message=(
+                            f"Visualizer iteration {iter_num} failed; keeping previous best image"
+                        ),
+                        seconds=visualizer_seconds,
+                        iteration=iter_num,
+                        extra={"rollback": True, "error": rollback_info["error"]},
+                    ),
+                )
+                break
             _emit_progress(
                 progress_callback,
                 PipelineProgressEvent(
@@ -1743,8 +1860,19 @@ class PaperBananaPipeline:
 
         # Final output
         output_format = getattr(self.settings, "output_format", "png").lower()
+        final_iterations = iterations
+        if not iterations and rollback_info is not None and resume_state.last_image_path:
+            # Rolled back before any new image was produced: keep the
+            # previous run's best image as the final output.
+            final_iterations = [
+                IterationRecord(
+                    iteration=start_iter,
+                    description=current_description,
+                    image_path=resume_state.last_image_path,
+                )
+            ]
         final_output_path = self._build_final_output(
-            iterations,
+            final_iterations,
             run_dir,
             "No iterations completed — budget exceeded before first iteration",
         )
@@ -1845,6 +1973,8 @@ class PaperBananaPipeline:
         if resume_state.diagram_type == DiagramType.METHODOLOGY and vector_mode != "none":
             metadata_dict["timing"]["structurer_seconds"] = structurer_seconds
         metadata_dict["continued_from_iteration"] = start_iter
+        if rollback_info is not None:
+            metadata_dict["rollback"] = rollback_info
         if ir_planner_status is not None:
             metadata_dict["ir_planner"] = {
                 "status": ir_planner_status,
