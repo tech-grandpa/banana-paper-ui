@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 
@@ -332,7 +333,11 @@ def test_cli_rejects_out_of_range_num_candidates(tmp_path):
             ],
         )
         assert result.exit_code != 0
-        assert "num-candidates" in result.output
+        # Strip ANSI escapes — rich colorizes CLI errors in CI, splitting
+        # the flag name across style codes.
+        plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+        assert "num-candidates" in plain
+        assert "1<=x<=8" in plain
 
 
 def test_cli_accepts_valid_num_candidates(tmp_path):
