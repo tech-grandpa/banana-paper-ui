@@ -11,6 +11,7 @@
         <a href="https://github.com/llmsresearch/paperbanana/actions/workflows/ci.yml"><img src="https://github.com/llmsresearch/paperbanana/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
         <a href="https://pypi.org/project/paperbanana/"><img src="https://img.shields.io/pypi/dm/paperbanana?label=PyPI%20downloads&logo=pypi&logoColor=white" alt="PyPI Downloads"/></a>
         <a href="https://huggingface.co/spaces/llmsresearch/paperbanana"><img src="https://img.shields.io/badge/Demo-HuggingFace-yellow?logo=huggingface&logoColor=white" alt="Demo"/></a>
+        <a href="https://colab.research.google.com/github/llmsresearch/paperbanana/blob/main/notebooks/PaperBanana_Colab_Quickstart.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open in Colab"/></a>
         <br/>
         <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white" alt="Python 3.10+"/></a>
         <a href="https://arxiv.org/abs/2601.23265"><img src="https://img.shields.io/badge/arXiv-2601.23265-b31b1b?logo=arxiv&logoColor=white" alt="arXiv"/></a>
@@ -64,6 +65,10 @@ Check out Atlas Cloud's new coding plan promotion for more budget-friendly API a
 
 ## Quick Start
 
+> **Try it in your browser:** the
+> [Colab quickstart notebook](https://colab.research.google.com/github/llmsresearch/paperbanana/blob/main/notebooks/PaperBanana_Colab_Quickstart.ipynb)
+> walks through install → API key → diagram generation end-to-end, no local setup required.
+
 ### Prerequisites
 
 - Python 3.10+
@@ -82,6 +87,24 @@ Or install from source for development:
 git clone https://github.com/llmsresearch/paperbanana.git
 cd paperbanana
 pip install -e ".[dev,openai,google]"
+```
+
+#### Docker
+
+Build the image from a clone of the repo and pass your API key at runtime:
+
+```bash
+docker build -t paperbanana .
+docker run --rm -e GOOGLE_API_KEY paperbanana generate --help
+```
+
+To generate a diagram, mount your input and an outputs folder into `/work`:
+
+```bash
+docker run --rm -e GOOGLE_API_KEY \
+  -v "$(pwd)/method.txt:/work/method.txt:ro" \
+  -v "$(pwd)/outputs:/work/outputs" \
+  paperbanana generate --input method.txt --caption "Overview of our framework"
 ```
 
 ### Step 2: Get Your API Key
