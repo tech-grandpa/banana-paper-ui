@@ -335,7 +335,10 @@ def generate(
     export_tikz: bool = typer.Option(
         False,
         "--export-tikz",
-        help="Export a compilable TikZ/LaTeX source file alongside the generated image",
+        help=(
+            "Export a TikZ/LaTeX source file alongside the generated image. "
+            "Generated LaTeX is not compile-validated; test in your LaTeX environment."
+        ),
     ),
     vector_export: Optional[str] = typer.Option(
         None,
@@ -832,6 +835,23 @@ def generate(
                     if event.seconds is not None
                     else " [green]✓[/green]"
                 )
+            elif event.stage == PipelineProgressStage.TIKZ_EXPORTER_START:
+                console.print("  [dim]●[/dim] Exporting LaTeX/TikZ...", end="")
+            elif event.stage == PipelineProgressStage.TIKZ_EXPORTER_END:
+                extra = event.extra or {}
+                err = extra.get("error")
+                if err:
+                    console.print(f" [yellow]![/yellow] [dim]{str(err)[:120]}[/dim]")
+                    console.print(
+                        "    [yellow]TikZ export failed — no .tex file was produced "
+                        "(the generated image is unaffected).[/yellow]"
+                    )
+                else:
+                    console.print(
+                        f" [green]✓[/green] [dim]{event.seconds:.1f}s[/dim]"
+                        if event.seconds is not None
+                        else " [green]✓[/green]"
+                    )
 
         return await pipeline.generate(
             gen_input,
@@ -848,6 +868,11 @@ def generate(
     console.print(f"  Output: [bold]{result.image_path}[/bold]")
     if result.tikz_path:
         console.print(f"  TikZ:   [bold]{result.tikz_path}[/bold]")
+    elif settings.export_tikz:
+        console.print(
+            "  [yellow]TikZ export failed — no .tex file was produced "
+            "(the generated image is unaffected).[/yellow]"
+        )
     console.print(f"  Run ID: [dim]{result.metadata.get('run_id', 'unknown')}[/dim]")
     if result.generated_caption:
         console.print("\n  [bold]Generated Caption:[/bold]")
@@ -2219,7 +2244,10 @@ def plot(
     export_pgfplots: bool = typer.Option(
         False,
         "--export-pgfplots",
-        help="Export a compilable PGFPlots/LaTeX source file alongside the generated plot",
+        help=(
+            "Export a PGFPlots/LaTeX source file alongside the generated plot. "
+            "Generated LaTeX is not compile-validated; test in your LaTeX environment."
+        ),
     ),
     vector: bool = typer.Option(
         False,
@@ -2318,6 +2346,11 @@ def plot(
     console.print(f"\n[green]Done![/green] Plot saved to: [bold]{result.image_path}[/bold]")
     if result.tikz_path:
         console.print(f"  PGFPlots: [bold]{result.tikz_path}[/bold]")
+    elif settings.export_pgfplots:
+        console.print(
+            "  [yellow]PGFPlots export failed — no .tex file was produced "
+            "(the generated plot is unaffected).[/yellow]"
+        )
     vector_paths = result.metadata.get("vector_output_paths", {})
     for fmt, path in vector_paths.items():
         console.print(f"[green]Vector ({fmt.upper()}):[/green] [bold]{path}[/bold]")

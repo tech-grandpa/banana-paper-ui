@@ -1345,6 +1345,7 @@ class PaperBananaPipeline:
             )
             self._emit_progress("tikz_export_started")
             tikz_start = time.perf_counter()
+            tikz_error: str | None = None
             try:
                 tikz_source = await self.tikz_exporter.run(
                     image_path=final_output_path,
@@ -1361,23 +1362,33 @@ class PaperBananaPipeline:
                 tex_path.write_text(tikz_source, encoding="utf-8")
                 tikz_path = str(tex_path)
                 logger.info("TikZ export saved", path=tikz_path)
-            except Exception:
+            except Exception as e:
+                tikz_error = str(e)
                 logger.warning("TikZ export failed", exc_info=True)
             tikz_seconds = time.perf_counter() - tikz_start
             _emit_progress(
                 progress_callback,
                 PipelineProgressEvent(
                     stage=PipelineProgressStage.TIKZ_EXPORTER_END,
-                    message="TikZ export done",
+                    message="TikZ export failed (image is unaffected)"
+                    if tikz_error
+                    else "TikZ export done",
                     seconds=tikz_seconds,
-                    extra={"tikz_path": tikz_path},
+                    extra={"tikz_path": tikz_path, "error": tikz_error},
                 ),
             )
-            self._emit_progress(
-                "tikz_export_completed",
-                seconds=round(tikz_seconds, 1),
-                tikz_path=tikz_path,
-            )
+            if tikz_error:
+                self._emit_progress(
+                    "tikz_export_failed",
+                    seconds=round(tikz_seconds, 1),
+                    error=tikz_error,
+                )
+            else:
+                self._emit_progress(
+                    "tikz_export_completed",
+                    seconds=round(tikz_seconds, 1),
+                    tikz_path=tikz_path,
+                )
 
         vector_mode = self._effective_vector_export(input)
         structurer_seconds = 0.0

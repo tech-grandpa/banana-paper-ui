@@ -30,6 +30,9 @@ class TikZExporterAgent(BaseAgent):
     For methodology diagrams the agent emits a standalone TikZ picture. For
     statistical plots it emits PGFPlots markup.  The output is a self-contained
     snippet that can be pasted directly into any LaTeX document.
+
+    Note: Generated LaTeX is not compile-validated; test in your LaTeX
+    environment.
     """
 
     def __init__(
