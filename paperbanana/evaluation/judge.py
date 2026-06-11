@@ -14,7 +14,7 @@ from paperbanana.core.types import (
     DimensionResult,
     EvaluationScore,
 )
-from paperbanana.core.utils import extract_json, load_image
+from paperbanana.core.utils import extract_json, load_image, truncate_text
 from paperbanana.providers.base import VLMProvider
 
 logger = structlog.get_logger()
@@ -164,7 +164,11 @@ class VLMJudge:
                 score=score,
                 reasoning=reasoning,
             )
-        logger.warning("Failed to parse evaluation response", dimension=dimension)
+        logger.warning(
+            "Failed to parse evaluation response",
+            dimension=dimension,
+            raw_response=truncate_text(response, 500),
+        )
         return DimensionResult(
             winner="Both are good",
             score=50.0,

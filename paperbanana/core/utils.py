@@ -218,7 +218,9 @@ def extract_json(text: str | None) -> dict | list | None:
     result = _try_parse_json(text)
     if result is not None:
         return result
-    for pattern in [r"```json\s*\n(.*?)```", r"```\s*\n(.*?)```"]:
+    # Code fences with or without a language tag; newline after the opening
+    # fence is optional (some models emit ```json{...}``` on one line).
+    for pattern in [r"```json\s*(.*?)\s*```", r"```\s*(.*?)\s*```"]:
         m = re.search(pattern, text, re.DOTALL)
         if m:
             result = _try_parse_json(m.group(1).strip())

@@ -6,7 +6,7 @@ import structlog
 
 from paperbanana.agents.base import BaseAgent
 from paperbanana.core.types import DiagramType, ReferenceExample
-from paperbanana.core.utils import extract_json
+from paperbanana.core.utils import extract_json, truncate_text
 from paperbanana.providers.base import VLMProvider
 
 logger = structlog.get_logger()
@@ -112,7 +112,10 @@ class RetrieverAgent(BaseAgent):
         """Parse VLM response to extract selected example IDs."""
         data = extract_json(response)
         if not isinstance(data, dict):
-            logger.warning("Failed to parse retriever response as JSON, using fallback")
+            logger.warning(
+                "Failed to parse retriever response as JSON, using fallback",
+                raw_response=truncate_text(response, 500),
+            )
             return candidates
         selected_ids = (
             data.get("selected_ids") or data.get("top_10_papers") or data.get("top_10_plots") or []

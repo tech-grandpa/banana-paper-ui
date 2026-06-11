@@ -9,7 +9,7 @@ import structlog
 
 from paperbanana.agents.base import BaseAgent
 from paperbanana.core.types import CritiqueResult, DiagramType
-from paperbanana.core.utils import extract_json, load_image
+from paperbanana.core.utils import extract_json, load_image, truncate_text
 from paperbanana.providers.base import VLMProvider
 
 logger = structlog.get_logger()
@@ -118,5 +118,8 @@ class CriticAgent(BaseAgent):
                 )
             except (KeyError, TypeError) as e:
                 logger.warning("Failed to build CritiqueResult", error=str(e))
-        logger.warning("Failed to parse critic response as JSON")
+        logger.warning(
+            "Failed to parse critic response as JSON",
+            raw_response=truncate_text(response, 500),
+        )
         return CritiqueResult(critic_suggestions=[], revised_description=None)

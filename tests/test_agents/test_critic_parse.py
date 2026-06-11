@@ -32,6 +32,41 @@ class TestExtractJsonNoneSafe:
         assert extract_json('{"key": "val') is None
 
 
+class TestExtractJsonRobustness:
+    """extract_json should recover JSON wrapped in fences or prose."""
+
+    def test_json_fence(self):
+        text = '```json\n{"key": "value"}\n```'
+        assert extract_json(text) == {"key": "value"}
+
+    def test_plain_fence(self):
+        text = '```\n{"key": "value"}\n```'
+        assert extract_json(text) == {"key": "value"}
+
+    def test_inline_fence_without_newline(self):
+        text = '```json{"key": "value"}```'
+        assert extract_json(text) == {"key": "value"}
+
+    def test_leading_prose(self):
+        text = 'Here is my evaluation of the image:\n{"key": "value"}'
+        assert extract_json(text) == {"key": "value"}
+
+    def test_trailing_commentary(self):
+        text = '{"key": "value"}\nLet me know if you need anything else.'
+        assert extract_json(text) == {"key": "value"}
+
+    def test_prose_around_fenced_json(self):
+        text = 'Sure! Here it is:\n```json\n{"key": "value"}\n```\nHope that helps.'
+        assert extract_json(text) == {"key": "value"}
+
+    def test_nested_braces_in_strings(self):
+        text = 'Result: {"summary": "use {curly} braces", "n": 1} done'
+        assert extract_json(text) == {"summary": "use {curly} braces", "n": 1}
+
+    def test_genuinely_invalid_returns_none(self):
+        assert extract_json("I could not evaluate the image, sorry.") is None
+
+
 class TestCriticParseResponse:
     """CriticAgent._parse_response should not crash on malformed input."""
 
@@ -66,3 +101,26 @@ class TestCriticParseResponse:
     def test_truncated_json_returns_empty_critique(self, critic):
         result = critic._parse_response('{"critic_suggestions": ["fix')
         assert result.needs_revision is False
+
+    def test_fenced_json_parsed(self, critic):
+        data = {"critic_suggestions": ["fix arrow"], "revised_description": "v2"}
+        result = critic._parse_response(f"```json\n{json.dumps(data)}\n```")
+        assert result.needs_revision is True
+        assert result.critic_suggestions == ["fix arrow"]
+        assert result.revised_description == "v2"
+
+    def test_json_with_leading_prose_parsed(self, critic):
+        data = {"critic_suggestions": ["align labels"], "revised_description": None}
+        result = critic._parse_response(f"Here is the critique:\n{json.dumps(data)}")
+        assert result.critic_suggestions == ["align labels"]
+
+    def test_json_with_trailing_commentary_parsed(self, critic):
+        data = {"critic_suggestions": [], "revised_description": None}
+        result = critic._parse_response(f"{json.dumps(data)}\nOverall the figure looks good.")
+        assert result.needs_revision is False
+
+    def test_invalid_response_returns_empty_critique_without_raising(self, critic):
+        result = critic._parse_response("The model refused to answer in JSON format.")
+        assert result.needs_revision is False
+        assert result.critic_suggestions == []
+        assert result.revised_description is None
