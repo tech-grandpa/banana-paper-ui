@@ -172,6 +172,28 @@ def _embed_caption(image_path: str, caption: str) -> None:
 mcp = FastMCP("PaperBanana")
 
 
+def _validate_input_images(input_images: list[str] | None) -> list[str]:
+    """Validate user-provided reference/sketch image paths before the pipeline starts.
+
+    Each path must exist and be a PIL-openable raster image.
+
+    Raises:
+        ValueError: If a path is missing or not a valid raster image.
+    """
+    validated: list[str] = []
+    for image_path in input_images or []:
+        path = Path(image_path)
+        if not path.is_file():
+            raise ValueError(f"Image file not found: {image_path}")
+        try:
+            with PILImage.open(path) as im:
+                im.verify()
+        except Exception:
+            raise ValueError(f"Not a valid raster image (e.g. PNG, JPEG, WebP): {image_path}")
+        validated.append(str(path))
+    return validated
+
+
 @mcp.tool
 async def generate_diagram(
     source_context: str,
@@ -181,6 +203,7 @@ async def generate_diagram(
     optimize: bool = False,
     auto_refine: bool = False,
     generate_caption: bool = False,
+    input_images: list[str] | None = None,
 ) -> Image:
     """Generate a publication-quality methodology diagram from text.
 
@@ -197,10 +220,15 @@ async def generate_diagram(
         generate_caption: Auto-generate a publication-ready figure caption
             after generation. When True, the caption is embedded in the
             image metadata (PNG tEXt chunk, key "Caption") and logged.
+        input_images: Optional file paths to user-provided reference/sketch
+            images (hand-drawn sketch, whiteboard photo, prior figure) that
+            guide the layout and content of the generated diagram.
 
     Returns:
         The generated diagram as a PNG image.
     """
+    validated_images = _validate_input_images(input_images)
+
     settings = Settings(
         refinement_iterations=iterations,
         optimize_inputs=optimize,
@@ -223,6 +251,7 @@ async def generate_diagram(
         communicative_intent=caption,
         diagram_type=DiagramType.METHODOLOGY,
         aspect_ratio=aspect_ratio,
+        input_images=validated_images,
     )
 
     result = await pipeline.generate(gen_input)

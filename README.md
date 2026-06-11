@@ -59,7 +59,7 @@ An agentic framework for generating publication-quality academic diagrams and st
 Atlas Cloud is a full-modal AI inference platform that gives developers a single AI API to access video generation, image generation, and LLM APIs. Instead of managing multiple vendor integrations, you connect once and get unified access to 300+ curated models across all modalities.
 
 Check out Atlas Cloud's new coding plan promotion for more budget-friendly API access:
-[https://www.atlascloud.ai/console/coding-plan](https://www.atlascloud.ai/console/coding-plan)
+[https://www.atlascloud.ai/console/coding-plan](https://www.atlascloud.ai/console/coding-plan?utm_source=github&utm_medium=link&utm_campaign=paperbanana)
 
 ---
 
@@ -213,7 +213,7 @@ Recommended Atlas LLM models for `ATLASCLOUD_VLM_MODEL`:
 - `google/gemini-2.5-flash`
 - `anthropic/claude-sonnet-4.5-20250929`
 
-These are stable, generally available models verified against the Atlas Cloud API. The full, always-current model pool (300+ models) is documented on Atlas Cloud's own docs — see [https://www.atlascloud.ai/models](https://www.atlascloud.ai/models) — and any model id listed there can be passed via `ATLASCLOUD_VLM_MODEL`.
+These are stable, generally available models verified against the Atlas Cloud API. The full, always-current model pool (300+ models) is documented on Atlas Cloud's own docs — see [https://www.atlascloud.ai/models](https://www.atlascloud.ai/models?utm_source=github&utm_medium=link&utm_campaign=paperbanana) — and any model id listed there can be passed via `ATLASCLOUD_VLM_MODEL`.
 
 Recommended Atlas image models for `ATLASCLOUD_IMAGE_MODEL`:
 
@@ -255,12 +255,19 @@ paperbanana generate \
   --input paper.pdf \
   --caption "Overview of our method" \
   --pdf-pages "3-8"
+
+# Guide generation with a reference/sketch image (repeatable)
+paperbanana generate \
+  --input method.txt \
+  --caption "Overview of our framework" \
+  --image sketch.png --image prior_figure.png
 ```
 
 | Flag | Short | Description |
 |------|-------|-------------|
 | `--input` | `-i` | Path to methodology text file or PDF (required for new runs) |
 | `--caption` | `-c` | Figure caption / communicative intent (required for new runs) |
+| `--image` | | Reference/sketch image (hand-drawn sketch, whiteboard photo, prior figure) that guides the Planner. Repeatable for multiple images |
 | `--output` | `-o` | Output image path (default: auto-generated in `outputs/`) |
 | `--iterations` | `-n` | Number of Visualizer-Critic refinement rounds (default: 3) |
 | `--num-candidates` | `-k` | Generate N candidate images in parallel, 1-8 (default: 1). Planning runs once; refinement fans out per candidate with seed offsets. Outputs land in `candidates/cand_<i>/`; the run-root `final_output` is candidate 1. Cost estimates and `--budget` account for the fan-out |

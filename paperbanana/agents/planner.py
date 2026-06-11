@@ -46,6 +46,7 @@ class PlannerAgent(BaseAgent):
         examples: list[ReferenceExample],
         diagram_type: DiagramType = DiagramType.METHODOLOGY,
         supported_ratios: list[str] | None = None,
+        input_images: list[str] | None = None,
     ) -> tuple[str, str | None]:
         """Generate a detailed textual description of the target diagram.
 
@@ -55,6 +56,8 @@ class PlannerAgent(BaseAgent):
             examples: Retrieved reference examples for in-context learning.
             diagram_type: Type of diagram being generated.
             supported_ratios: Aspect ratios the image provider supports.
+            input_images: Paths to user-provided reference/sketch images that
+                guide the plan alongside the retrieved exemplars.
 
         Returns:
             Tuple of (description, recommended_ratio).
@@ -66,8 +69,18 @@ class PlannerAgent(BaseAgent):
         # Load reference images for visual in-context learning
         example_images = await asyncio.to_thread(self._load_example_images, examples)
 
+        # Load user-provided reference/sketch images (attached after the
+        # exemplar images so "reference image N" indexing stays valid).
+        user_images: list = []
+        if input_images:
+            user_images = await asyncio.to_thread(self._load_input_images, input_images)
+
         prompt_type = "diagram" if diagram_type == DiagramType.METHODOLOGY else "plot"
         template = self.load_prompt(prompt_type)
+        if user_images:
+            # Appended pre-format so the prompt recorder captures it; the note
+            # is brace-free, keeping str.format() on the template intact.
+            template += "\n\n" + self._format_user_image_note(len(user_images))
         # Inject supported ratios into the prompt template
         ratios_str = ", ".join(supported_ratios) if supported_ratios else "1:1, 16:9"
         prompt = self.format_prompt(
@@ -83,12 +96,14 @@ class PlannerAgent(BaseAgent):
             "Running planner agent",
             num_examples=len(examples),
             num_images=len(example_images),
+            num_user_images=len(user_images),
             context_length=len(source_context),
         )
 
+        all_images = example_images + user_images
         raw_output = await self.vlm.generate(
             prompt=prompt,
-            images=example_images if example_images else None,
+            images=all_images if all_images else None,
             temperature=0.7,
             max_tokens=4096,
         )
@@ -238,6 +253,36 @@ class PlannerAgent(BaseAgent):
                 logger.warning(
                     "Failed to load reference image",
                     image_path=ex.image_path,
+                    error=str(e),
+                )
+        return images
+
+    @staticmethod
+    def _format_user_image_note(count: int) -> str:
+        """Label for user-provided reference/sketch images attached to the prompt."""
+        return (
+            "## User-Provided Reference/Sketch\n"
+            f"The final {count} attached image(s), after the reference example images, "
+            "are user-provided reference/sketch images (e.g. a hand-drawn sketch, "
+            "whiteboard photo, or a prior version of the figure). Use them as guidance "
+            "for the layout and content of the target diagram while staying faithful "
+            "to the source text."
+        )
+
+    def _load_input_images(self, paths: list[str]) -> list:
+        """Load user-provided reference/sketch images from local paths.
+
+        Returns PIL Image objects; unreadable files are skipped with a warning
+        (the CLI/MCP entry points validate them before the pipeline starts).
+        """
+        images = []
+        for path in paths:
+            try:
+                images.append(load_image(path))
+            except Exception as e:
+                logger.warning(
+                    "Failed to load user-provided reference image",
+                    image_path=path,
                     error=str(e),
                 )
         return images

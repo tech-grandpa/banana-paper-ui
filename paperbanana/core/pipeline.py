@@ -579,6 +579,7 @@ class PaperBananaPipeline:
                 seed=seed,
                 aspect_ratio=effective_ratio,
                 vector_formats=vector_formats,
+                sketch_guided=bool(input.input_images),
             )
             visualizer_seconds = time.perf_counter() - visualizer_start
             if image_path is None:
@@ -1286,6 +1287,7 @@ class PaperBananaPipeline:
                     "raw_data": input.raw_data,
                     "aspect_ratio": input.aspect_ratio,
                     "vector_export": self._effective_vector_export(input),
+                    "input_images": input.input_images,
                 },
                 self._run_dir / "run_input.json",
             )
@@ -1361,6 +1363,7 @@ class PaperBananaPipeline:
                     diagram_type=input.diagram_type,
                     raw_data=input.raw_data,
                     aspect_ratio=input.aspect_ratio,
+                    input_images=input.input_images,
                 )
             except Exception:
                 optimize_seconds = time.perf_counter() - optimize_start
@@ -1490,6 +1493,7 @@ class PaperBananaPipeline:
             examples=examples,
             diagram_type=input.diagram_type,
             supported_ratios=getattr(self.visualizer.image_gen, "supported_ratios", None),
+            input_images=input.input_images,
         )
         planning_seconds = time.perf_counter() - planning_start
         _emit_progress(

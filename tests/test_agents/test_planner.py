@@ -8,6 +8,7 @@ from PIL import Image
 
 from paperbanana.agents.planner import PlannerAgent
 from paperbanana.core.types import ReferenceExample
+from paperbanana.core.utils import find_prompt_dir
 
 
 class _MockVLM:
@@ -16,6 +17,21 @@ class _MockVLM:
 
     async def generate(self, *args, **kwargs):
         return "ok"
+
+
+class _CapturingVLM:
+    """Mock VLM that records the prompt and image parts it receives."""
+
+    name = "mock-vlm"
+    model_name = "mock-model"
+
+    def __init__(self):
+        self.captured: dict = {}
+
+    async def generate(self, prompt, images=None, **kwargs):
+        self.captured["prompt"] = prompt
+        self.captured["images"] = images
+        return "a detailed description\nRECOMMENDED_RATIO: 16:9"
 
 
 def test_format_examples_includes_structure_hints():
@@ -72,6 +88,66 @@ def test_has_valid_image_rejects_insecure_or_local_urls():
     assert agent._has_valid_image(insecure) is False
     assert agent._has_valid_image(localhost) is False
     assert agent._has_valid_image(private_ip) is False
+
+
+async def test_planner_attaches_user_sketch_images_after_exemplars(tmp_path):
+    """User sketch images are attached after exemplar images and labeled in the prompt."""
+    ref_img = tmp_path / "ref.png"
+    Image.new("RGB", (2, 2), color=(255, 0, 0)).save(ref_img)
+    sketch = tmp_path / "sketch.png"
+    Image.new("RGB", (4, 4), color=(0, 0, 255)).save(sketch)
+
+    vlm = _CapturingVLM()
+    agent = PlannerAgent(vlm, prompt_dir=find_prompt_dir())
+
+    description, ratio = await agent.run(
+        source_context="methodology text",
+        caption="figure caption",
+        examples=[
+            ReferenceExample(
+                id="ref_001",
+                source_context="ctx",
+                caption="cap",
+                image_path=str(ref_img),
+            )
+        ],
+        input_images=[str(sketch)],
+    )
+
+    assert description == "a detailed description"
+    assert ratio == "16:9"
+    # Exemplar image first, user sketch attached last.
+    images = vlm.captured["images"]
+    assert len(images) == 2
+    assert images[0].size == (2, 2)
+    assert images[-1].size == (4, 4)
+    # The prompt labels the trailing image parts as user-provided.
+    assert "User-Provided Reference/Sketch" in vlm.captured["prompt"]
+
+
+async def test_planner_without_user_images_keeps_prompt_unchanged(tmp_path):
+    """No sketch label or extra image parts appear when input_images is absent."""
+    ref_img = tmp_path / "ref.png"
+    Image.new("RGB", (2, 2), color=(255, 0, 0)).save(ref_img)
+
+    vlm = _CapturingVLM()
+    agent = PlannerAgent(vlm, prompt_dir=find_prompt_dir())
+
+    await agent.run(
+        source_context="methodology text",
+        caption="figure caption",
+        examples=[
+            ReferenceExample(
+                id="ref_001",
+                source_context="ctx",
+                caption="cap",
+                image_path=str(ref_img),
+            )
+        ],
+    )
+
+    assert len(vlm.captured["images"]) == 1
+    assert "User-Provided Reference/Sketch" not in vlm.captured["prompt"]
 
 
 def test_load_example_images_loads_from_url(monkeypatch):
