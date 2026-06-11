@@ -89,7 +89,7 @@ class ProviderRegistry:
     def create_vlm(settings: Settings) -> VLMProvider:
         """Create a VLM provider based on settings."""
         provider = settings.vlm_provider.lower()
-        logger.info("Creating VLM provider", provider=provider, model=settings.vlm_model)
+        logger.info("Creating VLM provider", provider=provider, model=settings.effective_vlm_model)
 
         if provider == "gemini":
             _validate_api_key(settings.google_api_key, "GOOGLE_API_KEY")
@@ -197,7 +197,11 @@ class ProviderRegistry:
     def create_image_gen(settings: Settings) -> ImageGenProvider:
         """Create an image generation provider based on settings."""
         provider = settings.image_provider.lower()
-        logger.info("Creating image gen provider", provider=provider, model=settings.image_model)
+        logger.info(
+            "Creating image gen provider",
+            provider=provider,
+            model=settings.effective_image_model,
+        )
 
         if provider == "none":
             from paperbanana.providers.image_gen.dummy import DummyImageGen
