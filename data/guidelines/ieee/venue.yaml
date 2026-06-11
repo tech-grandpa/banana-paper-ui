@@ -1,0 +1,4 @@
+display_name: "IEEE"
+# Most IEEE transactions are two-column; design for column width.
+aspect_ratio: "4:3"
+fonts: ["Arial", "Helvetica"]

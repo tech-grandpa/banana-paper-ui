@@ -1,0 +1,4 @@
+display_name: "ICML"
+# ICML is two-column; column-width figures favor compact ratios.
+aspect_ratio: "4:3"
+fonts: ["Helvetica", "Arial"]

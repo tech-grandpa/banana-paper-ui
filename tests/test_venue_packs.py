@@ -82,7 +82,8 @@ class TestUserVenueDirResolution:
 
     def test_default_is_xdg_config_dir(self, monkeypatch):
         monkeypatch.delenv("PAPERBANANA_VENUE_DIR", raising=False)
-        assert str(resolve_user_venue_dir()).endswith(".config/paperbanana/venues")
+        # Compare path components, not a string — separators differ on Windows.
+        assert resolve_user_venue_dir().parts[-3:] == (".config", "paperbanana", "venues")
 
 
 # ── Listing & resolution precedence ──────────────────────────────────
@@ -397,3 +398,17 @@ class TestCliVenueValidation:
         )
         out = _strip_ansi(result.output)
         assert "Unknown venue" not in out
+
+
+class TestBuiltinVenueConfigs:
+    """Built-in venues ship venue.yaml with column-aware defaults."""
+
+    def test_two_column_venues_default_to_4_3(self):
+        for name in ("icml", "ieee", "acl"):
+            pack = resolve_venue(name)
+            assert pack.source == "built-in"
+            assert pack.config.aspect_ratio == "4:3", f"{name} should default to 4:3"
+
+    def test_font_preferences_loaded(self):
+        assert resolve_venue("icml").config.fonts == ["Helvetica", "Arial"]
+        assert resolve_venue("ieee").config.fonts == ["Arial", "Helvetica"]
