@@ -61,6 +61,7 @@ class VisualizerAgent(BaseAgent):
         seed: Optional[int] = None,
         aspect_ratio: Optional[str] = None,
         vector_formats: Optional[list[str]] = None,
+        sketch_guided: bool = False,
     ) -> str:
         """Generate an image from a description.
 
@@ -74,6 +75,8 @@ class VisualizerAgent(BaseAgent):
             aspect_ratio: Target aspect ratio (e.g., '16:9', '1:1').
             vector_formats: Vector formats to export alongside raster (e.g., ['svg', 'pdf']).
                 Only applies to statistical plots; ignored for methodology diagrams.
+            sketch_guided: When True, the diagram prompt notes that a
+                user-provided reference sketch guided the plan.
 
         Returns:
             Path to the generated raster image.
@@ -90,7 +93,13 @@ class VisualizerAgent(BaseAgent):
                 iteration,
                 seed,
                 aspect_ratio,
+                sketch_guided=sketch_guided,
             )
+
+    _SKETCH_GUIDED_NOTE = (
+        "Note: this plan was guided by a user-provided reference sketch; "
+        "follow the description above faithfully."
+    )
 
     async def _generate_diagram(
         self,
@@ -99,9 +108,12 @@ class VisualizerAgent(BaseAgent):
         iteration: int,
         seed: Optional[int],
         aspect_ratio: Optional[str] = None,
+        sketch_guided: bool = False,
     ) -> str:
         """Generate a methodology diagram using the image generation model."""
         template = self.load_prompt("diagram")
+        if sketch_guided:
+            template += "\n\n" + self._SKETCH_GUIDED_NOTE
         prompt = self.format_prompt(
             template,
             prompt_label=f"visualizer_diagram_iter_{iteration}",

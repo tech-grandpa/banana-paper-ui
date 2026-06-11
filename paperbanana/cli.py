@@ -245,6 +245,14 @@ def generate(
     caption: Optional[str] = typer.Option(
         None, "--caption", "-c", help="Figure caption / communicative intent"
     ),
+    image: Optional[list[str]] = typer.Option(
+        None,
+        "--image",
+        help=(
+            "Path to a reference/sketch image (hand-drawn sketch, whiteboard photo, "
+            "prior figure) that guides generation. Repeatable for multiple images."
+        ),
+    ),
     output: Optional[str] = typer.Option(None, "--output", "-o", help="Output image path"),
     output_dir: Optional[str] = typer.Option(
         None,
@@ -455,6 +463,31 @@ def generate(
             "[red]Error: --pdf-pages cannot be used with --continue or --continue-run[/red]"
         )
         raise typer.Exit(1)
+    if image and (continue_last or continue_run):
+        console.print("[red]Error: --image cannot be used with --continue or --continue-run[/red]")
+        raise typer.Exit(1)
+
+    # Validate reference/sketch images before any pipeline work starts.
+    input_images: list[str] = []
+    if image:
+        from PIL import Image as PILImage
+        from PIL import UnidentifiedImageError
+
+        for image_path in image:
+            img_file = Path(image_path)
+            if not img_file.is_file():
+                console.print(f"[red]Error: Image file not found: {image_path}[/red]")
+                raise typer.Exit(1)
+            try:
+                with PILImage.open(img_file) as im:
+                    im.verify()
+            except (UnidentifiedImageError, OSError, ValueError):
+                console.print(
+                    f"[red]Error: Not a valid raster image (e.g. PNG, JPEG, WebP): "
+                    f"{image_path}[/red]"
+                )
+                raise typer.Exit(1)
+            input_images.append(str(img_file))
 
     _valid_categories = {
         "agent_reasoning",
@@ -721,6 +754,7 @@ def generate(
         diagram_type=DiagramType.METHODOLOGY,
         aspect_ratio=aspect_ratio,
         reference_ids=ref_id_list,
+        input_images=input_images,
     )
 
     # Determine expected output file extension based on settings.output_format
@@ -764,6 +798,8 @@ def generate(
         pdf_note = ""
         if input_path.suffix.lower() == ".pdf":
             pdf_note = f"\nPDF pages: {pdf_pages.strip() if pdf_pages else 'all'}"
+        if input_images:
+            pdf_note += f"\nReference images: {', '.join(input_images)}"
         console.print(
             Panel.fit(
                 "[bold]PaperBanana[/bold] - Dry Run\n\n"

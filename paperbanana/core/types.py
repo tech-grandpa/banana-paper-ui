@@ -91,6 +91,14 @@ class GenerationInput(BaseModel):
         default=None,
         description="Optional vector export (svg/pdf/both); None uses Settings.vector_export",
     )
+    input_images: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Paths to user-provided reference/sketch images (e.g. a hand-drawn "
+            "sketch, whiteboard photo, or prior figure version) that guide the "
+            "Planner alongside retrieved exemplars."
+        ),
+    )
 
     @field_validator("aspect_ratio")
     @classmethod

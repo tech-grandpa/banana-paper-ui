@@ -255,12 +255,19 @@ paperbanana generate \
   --input paper.pdf \
   --caption "Overview of our method" \
   --pdf-pages "3-8"
+
+# Guide generation with a reference/sketch image (repeatable)
+paperbanana generate \
+  --input method.txt \
+  --caption "Overview of our framework" \
+  --image sketch.png --image prior_figure.png
 ```
 
 | Flag | Short | Description |
 |------|-------|-------------|
 | `--input` | `-i` | Path to methodology text file or PDF (required for new runs) |
 | `--caption` | `-c` | Figure caption / communicative intent (required for new runs) |
+| `--image` | | Reference/sketch image (hand-drawn sketch, whiteboard photo, prior figure) that guides the Planner. Repeatable for multiple images |
 | `--output` | `-o` | Output image path (default: auto-generated in `outputs/`) |
 | `--iterations` | `-n` | Number of Visualizer-Critic refinement rounds (default: 3) |
 | `--num-candidates` | `-k` | Generate N candidate images in parallel, 1-8 (default: 1). Planning runs once; refinement fans out per candidate with seed offsets. Outputs land in `candidates/cand_<i>/`; the run-root `final_output` is candidate 1. Cost estimates and `--budget` account for the fan-out |
