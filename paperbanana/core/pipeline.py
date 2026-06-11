@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 import time
 from pathlib import Path
@@ -230,6 +231,7 @@ class PaperBananaPipeline:
 
         # Initialize agents
         prompt_dir = self._find_prompt_dir()
+        self._prompt_dir = prompt_dir
         self.optimizer = InputOptimizerAgent(
             self._vlm, prompt_dir=prompt_dir, prompt_recorder=self._prompt_recorder
         )
@@ -413,6 +415,7 @@ class PaperBananaPipeline:
         iteration: int,
         rollback_to: Optional[int],
         run_dir: Path,
+        visualizer: Optional[VisualizerAgent] = None,
         **visualizer_kwargs: Any,
     ) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
         """Run the visualizer for one refinement iteration, rolling back on failure.
@@ -423,11 +426,16 @@ class PaperBananaPipeline:
         returned so the caller stops the loop and keeps the previous best
         image as the final output.  Without a prior image (first round) the
         exception propagates, preserving existing error behavior.
+
+        ``visualizer`` selects the agent instance to run (defaults to
+        ``self.visualizer``); multi-candidate fan-out passes a per-branch
+        instance so concurrent branches never share output paths.
         """
+        visualizer = visualizer or self.visualizer
         try:
             image_path = await _call_with_retry(
                 "visualizer",
-                self.visualizer.run,
+                visualizer.run,
                 iteration=iteration,
                 **visualizer_kwargs,
             )
@@ -467,6 +475,376 @@ class PaperBananaPipeline:
                 )
             return None, rollback_info
         return image_path, None
+
+    async def _run_refinement_branch(
+        self,
+        *,
+        input: GenerationInput,
+        initial_description: str,
+        effective_ratio: Optional[str],
+        vector_formats: Optional[list[str]],
+        total_iters: int,
+        run_dir: Path,
+        visualizer: VisualizerAgent,
+        seed: Optional[int],
+        candidate_index: Optional[int] = None,
+        progress_callback: Optional[Callable[[PipelineProgressEvent], None]] = None,
+    ) -> Dict[str, Any]:
+        """Run one Phase-2 Visualizer<->Critic refinement loop.
+
+        Used both for the standard single run (``candidate_index=None``,
+        ``run_dir=self._run_dir``, ``visualizer=self.visualizer``) and for
+        each branch of multi-candidate fan-out (per-candidate run dir,
+        per-branch ``VisualizerAgent`` instance, per-candidate seed).
+
+        The shared ``CostTracker`` is safe to accumulate from concurrent
+        branches (single event loop, synchronous appends), so the budget
+        guard stops every branch at its next checkpoint once exceeded.
+        Per-agent cost attribution may interleave across branches; totals
+        and budget enforcement are unaffected.
+        """
+
+        def _extra(**payload: Any) -> Dict[str, Any]:
+            if candidate_index is not None:
+                payload["candidate"] = candidate_index
+            return payload
+
+        current_description = initial_description
+        iterations: list[IterationRecord] = []
+        iteration_timings: list[dict[str, float | int]] = []
+        rollback_info: Optional[Dict[str, Any]] = None
+
+        # Check budget after pre-iteration phases (retriever, planner, stylist)
+        budget_exceeded = self._check_budget("after planning phases")
+
+        for i in range(total_iters):
+            if budget_exceeded:
+                break
+
+            iter_index = i + 1
+            logger.info(
+                f"Phase 2: Iteration {iter_index}/{total_iters}"
+                + (" (auto)" if self.settings.auto_refine else "")
+                + (f" [candidate {candidate_index}]" if candidate_index is not None else "")
+            )
+            self._emit_progress(
+                "iteration_started",
+                **_extra(
+                    iteration=iter_index,
+                    total_iterations=total_iters,
+                    auto=self.settings.auto_refine,
+                ),
+            )
+
+            # Step 4: Visualizer — generate image
+            if self._cost_tracker:
+                self._cost_tracker.set_agent("visualizer")
+            _emit_progress(
+                progress_callback,
+                PipelineProgressEvent(
+                    stage=PipelineProgressStage.VISUALIZER_START,
+                    message=f"Generating image (iteration {iter_index}/{total_iters})",
+                    iteration=iter_index,
+                    extra=_extra(total_iterations=total_iters),
+                ),
+            )
+            visualizer_start = time.perf_counter()
+            image_path, rollback_info = await self._visualize_with_rollback(
+                iteration=iter_index,
+                rollback_to=iterations[-1].iteration if iterations else None,
+                run_dir=run_dir,
+                visualizer=visualizer,
+                description=current_description,
+                diagram_type=input.diagram_type,
+                raw_data=input.raw_data,
+                seed=seed,
+                aspect_ratio=effective_ratio,
+                vector_formats=vector_formats,
+            )
+            visualizer_seconds = time.perf_counter() - visualizer_start
+            if image_path is None:
+                _emit_progress(
+                    progress_callback,
+                    PipelineProgressEvent(
+                        stage=PipelineProgressStage.VISUALIZER_END,
+                        message=(
+                            f"Visualizer iteration {iter_index} failed; keeping previous best image"
+                        ),
+                        seconds=visualizer_seconds,
+                        iteration=iter_index,
+                        extra=_extra(rollback=True, error=rollback_info["error"]),
+                    ),
+                )
+                break
+            _emit_progress(
+                progress_callback,
+                PipelineProgressEvent(
+                    stage=PipelineProgressStage.VISUALIZER_END,
+                    message=f"Visualizer iteration {iter_index} done",
+                    seconds=visualizer_seconds,
+                    iteration=iter_index,
+                    extra=_extra(),
+                ),
+            )
+            logger.info(
+                f"[Visualizer] Iteration {iter_index}/{total_iters} done",
+                seconds=round(visualizer_seconds, 1),
+            )
+            self._emit_progress(
+                "visualizer_completed",
+                **_extra(iteration=iter_index, seconds=round(visualizer_seconds, 1)),
+            )
+
+            # Step 5: Critic — evaluate and provide feedback
+            if self._cost_tracker:
+                self._cost_tracker.set_agent("critic")
+            _emit_progress(
+                progress_callback,
+                PipelineProgressEvent(
+                    stage=PipelineProgressStage.CRITIC_START,
+                    message="Critic reviewing",
+                    iteration=iter_index,
+                    extra=_extra(),
+                ),
+            )
+            critic_start = time.perf_counter()
+            try:
+                critique = await _call_with_retry(
+                    "critic",
+                    self.critic.run,
+                    image_path=image_path,
+                    description=current_description,
+                    source_context=input.source_context,
+                    caption=input.communicative_intent,
+                    diagram_type=input.diagram_type,
+                )
+            except Exception:
+                logger.warning(
+                    "Critic failed after retries, accepting current image",
+                    iteration=iter_index,
+                    exc_info=True,
+                )
+                critique = CritiqueResult()
+            critic_seconds = time.perf_counter() - critic_start
+            _emit_progress(
+                progress_callback,
+                PipelineProgressEvent(
+                    stage=PipelineProgressStage.CRITIC_END,
+                    message="Critic done",
+                    seconds=critic_seconds,
+                    iteration=iter_index,
+                    extra=_extra(
+                        needs_revision=critique.needs_revision,
+                        summary=critique.summary,
+                        critic_suggestions=critique.critic_suggestions[:3],
+                    ),
+                ),
+            )
+            self._emit_progress(
+                "critic_completed",
+                **_extra(
+                    iteration=iter_index,
+                    seconds=round(critic_seconds, 1),
+                    needs_revision=critique.needs_revision,
+                ),
+            )
+
+            iteration_record = IterationRecord(
+                iteration=iter_index,
+                description=current_description,
+                image_path=image_path,
+                critique=critique,
+            )
+            iteration_timings.append(
+                {
+                    "iteration": iter_index,
+                    "visualizer_seconds": visualizer_seconds,
+                    "critic_seconds": critic_seconds,
+                }
+            )
+            iterations.append(iteration_record)
+
+            # Save iteration artifacts
+            if self.settings.save_iterations:
+                iter_dir = ensure_dir(run_dir / f"iter_{iter_index}")
+                save_json(
+                    {
+                        "description": current_description,
+                        "critique": critique.model_dump(),
+                    },
+                    iter_dir / "details.json",
+                )
+
+            # Check if revision needed
+            if critique.needs_revision and critique.revised_description:
+                logger.info(
+                    "Revision needed",
+                    iteration=iter_index,
+                    summary=critique.summary,
+                )
+                current_description = critique.revised_description
+            else:
+                logger.info(
+                    "No further revision needed",
+                    iteration=iter_index,
+                    summary=critique.summary,
+                )
+                self._emit_progress(
+                    "iteration_completed",
+                    **_extra(
+                        iteration=iter_index,
+                        total_iterations=len(iterations),
+                        needs_revision=critique.needs_revision,
+                    ),
+                )
+                break
+
+            self._emit_progress(
+                "iteration_completed",
+                **_extra(
+                    iteration=iter_index,
+                    total_iterations=len(iterations),
+                    needs_revision=critique.needs_revision,
+                ),
+            )
+
+            # Check budget between iterations
+            if self._check_budget("between iterations", iteration=iter_index):
+                budget_exceeded = True
+                break
+
+        return {
+            "iterations": iterations,
+            "iteration_timings": iteration_timings,
+            "rollback_info": rollback_info,
+            "final_description": current_description,
+            "budget_exceeded": budget_exceeded,
+            "vector_paths": dict(visualizer._last_vector_paths),
+        }
+
+    async def _fan_out_candidates(
+        self,
+        *,
+        input: GenerationInput,
+        initial_description: str,
+        effective_ratio: Optional[str],
+        vector_formats: Optional[list[str]],
+        total_iters: int,
+        num_candidates: int,
+        progress_callback: Optional[Callable[[PipelineProgressEvent], None]] = None,
+    ) -> tuple[Dict[str, Any], int, list[Dict[str, Any]]]:
+        """Run Phase 2 ``num_candidates`` times in parallel.
+
+        Each branch gets its own output directory
+        (``<run_dir>/candidates/cand_<i>``), its own ``VisualizerAgent``
+        instance (the agent keeps per-run mutable state: ``output_dir`` and
+        ``_last_vector_paths``), and a deterministic seed offset
+        (``settings.seed + i - 1`` when a seed is set, else ``None``).
+
+        A failed branch does not affect the others; if every branch fails,
+        a ``RuntimeError`` is raised. Returns ``(primary_branch,
+        primary_index, candidates_meta)`` where the primary is the
+        lowest-index successful candidate (candidate 1 unless it failed).
+        """
+        candidates_root = ensure_dir(self._run_dir / "candidates")
+        seeds: list[Optional[int]] = []
+        tasks = []
+        for idx in range(1, num_candidates + 1):
+            cand_dir = ensure_dir(candidates_root / f"cand_{idx}")
+            seed = self.settings.seed + (idx - 1) if self.settings.seed is not None else None
+            seeds.append(seed)
+            branch_visualizer = VisualizerAgent(
+                self._image_gen,
+                self._vlm,
+                prompt_dir=self._prompt_dir,
+                output_dir=str(cand_dir),
+                prompt_recorder=self._prompt_recorder,
+                output_resolution=self.settings.output_resolution,
+                image_quality=self.settings.image_quality,
+            )
+            tasks.append(
+                self._run_refinement_branch(
+                    input=input,
+                    initial_description=initial_description,
+                    effective_ratio=effective_ratio,
+                    vector_formats=vector_formats,
+                    total_iters=total_iters,
+                    run_dir=cand_dir,
+                    visualizer=branch_visualizer,
+                    seed=seed,
+                    candidate_index=idx,
+                    progress_callback=progress_callback,
+                )
+            )
+
+        self._emit_progress("candidates_fanout_started", num_candidates=num_candidates)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Candidate final outputs are always raster; the run-root final
+        # output carries the canonical requested format (including svg).
+        output_format = getattr(self.settings, "output_format", "png").lower()
+        cand_format = "png" if output_format == "svg" else output_format
+        cand_ext = "jpg" if cand_format == "jpeg" else cand_format
+
+        candidates_meta: list[Dict[str, Any]] = []
+        errors: list[tuple[int, BaseException]] = []
+        primary: Optional[Dict[str, Any]] = None
+        primary_index = 0
+        for idx, result in enumerate(results, start=1):
+            if isinstance(result, BaseException):
+                errors.append((idx, result))
+                logger.warning(
+                    "Candidate branch failed",
+                    candidate=idx,
+                    error=str(result),
+                )
+                self._emit_progress("candidate_failed", candidate=idx, error=str(result))
+                candidates_meta.append(
+                    {
+                        "index": idx,
+                        "seed": seeds[idx - 1],
+                        "image_path": None,
+                        "iterations": 0,
+                        "critic_satisfied": False,
+                        "error": str(result),
+                    }
+                )
+                continue
+
+            image_path: Optional[str] = None
+            if result["iterations"]:
+                cand_final = str(candidates_root / f"cand_{idx}" / f"final_output.{cand_ext}")
+                img = load_image(result["iterations"][-1].image_path)
+                save_image(img, cand_final, format=cand_format)
+                image_path = cand_final
+            last_critique = result["iterations"][-1].critique if result["iterations"] else None
+            entry: Dict[str, Any] = {
+                "index": idx,
+                "seed": seeds[idx - 1],
+                "image_path": image_path,
+                "iterations": len(result["iterations"]),
+                "critic_satisfied": bool(last_critique and not last_critique.needs_revision),
+                "budget_exceeded": result["budget_exceeded"],
+                "error": None,
+            }
+            if result["rollback_info"] is not None:
+                entry["rollback"] = result["rollback_info"]
+            candidates_meta.append(entry)
+            self._emit_progress(
+                "candidate_completed",
+                candidate=idx,
+                iterations=len(result["iterations"]),
+                image_path=image_path,
+            )
+            if primary is None:
+                primary = result
+                primary_index = idx
+
+        if primary is None:
+            detail = "; ".join(f"cand_{i}: {e}" for i, e in errors)
+            raise RuntimeError(f"All {num_candidates} candidate branches failed: {detail}")
+
+        return primary, primary_index, candidates_meta
 
     def _effective_vector_export(self, input: GenerationInput) -> str:
         """Resolve vector export mode from input override or settings."""
@@ -1182,10 +1560,6 @@ class PaperBananaPipeline:
                 source=ratio_source,
             )
 
-        current_description = optimized_description
-        iterations: list[IterationRecord] = []
-        iteration_timings = []
-        rollback_info: Optional[Dict[str, Any]] = None
         vector_formats = ["svg", "pdf"] if self.settings.vector_export != "none" else None
 
         if self.settings.auto_refine:
@@ -1193,195 +1567,44 @@ class PaperBananaPipeline:
         else:
             total_iters = self.settings.refinement_iterations
 
-        # Check budget after pre-iteration phases (retriever, planner, stylist)
-        budget_exceeded = self._check_budget("after planning phases")
+        num_candidates = self.settings.num_candidates
+        if not 1 <= num_candidates <= 8:
+            raise ValueError(f"num_candidates must be between 1 and 8, got {num_candidates}")
 
-        for i in range(total_iters):
-            if budget_exceeded:
-                break
-
-            iter_index = i + 1
-            logger.info(
-                f"Phase 2: Iteration {iter_index}/{total_iters}"
-                + (" (auto)" if self.settings.auto_refine else "")
-            )
-            self._emit_progress(
-                "iteration_started",
-                iteration=iter_index,
-                total_iterations=total_iters,
-                auto=self.settings.auto_refine,
-            )
-
-            # Step 4: Visualizer — generate image
-            if self._cost_tracker:
-                self._cost_tracker.set_agent("visualizer")
-            _emit_progress(
-                progress_callback,
-                PipelineProgressEvent(
-                    stage=PipelineProgressStage.VISUALIZER_START,
-                    message=f"Generating image (iteration {i + 1}/{total_iters})",
-                    iteration=i + 1,
-                    extra={"total_iterations": total_iters},
-                ),
-            )
-            visualizer_start = time.perf_counter()
-            image_path, rollback_info = await self._visualize_with_rollback(
-                iteration=iter_index,
-                rollback_to=iterations[-1].iteration if iterations else None,
-                run_dir=self._run_dir,
-                description=current_description,
-                diagram_type=input.diagram_type,
-                raw_data=input.raw_data,
-                seed=self.settings.seed,
-                aspect_ratio=effective_ratio,
+        candidates_meta: Optional[list[Dict[str, Any]]] = None
+        primary_candidate_index: Optional[int] = None
+        if num_candidates == 1:
+            branch = await self._run_refinement_branch(
+                input=input,
+                initial_description=optimized_description,
+                effective_ratio=effective_ratio,
                 vector_formats=vector_formats,
+                total_iters=total_iters,
+                run_dir=self._run_dir,
+                visualizer=self.visualizer,
+                seed=self.settings.seed,
+                progress_callback=progress_callback,
             )
-            visualizer_seconds = time.perf_counter() - visualizer_start
-            if image_path is None:
-                _emit_progress(
-                    progress_callback,
-                    PipelineProgressEvent(
-                        stage=PipelineProgressStage.VISUALIZER_END,
-                        message=(
-                            f"Visualizer iteration {iter_index} failed; keeping previous best image"
-                        ),
-                        seconds=visualizer_seconds,
-                        iteration=iter_index,
-                        extra={"rollback": True, "error": rollback_info["error"]},
-                    ),
-                )
-                break
-            _emit_progress(
-                progress_callback,
-                PipelineProgressEvent(
-                    stage=PipelineProgressStage.VISUALIZER_END,
-                    message=f"Visualizer iteration {i + 1} done",
-                    seconds=visualizer_seconds,
-                    iteration=i + 1,
-                ),
-            )
-            logger.info(
-                f"[Visualizer] Iteration {iter_index}/{total_iters} done",
-                seconds=round(visualizer_seconds, 1),
-            )
-            self._emit_progress(
-                "visualizer_completed",
-                iteration=iter_index,
-                seconds=round(visualizer_seconds, 1),
+        else:
+            branch, primary_candidate_index, candidates_meta = await self._fan_out_candidates(
+                input=input,
+                initial_description=optimized_description,
+                effective_ratio=effective_ratio,
+                vector_formats=vector_formats,
+                total_iters=total_iters,
+                num_candidates=num_candidates,
+                progress_callback=progress_callback,
             )
 
-            # Step 5: Critic — evaluate and provide feedback
-            if self._cost_tracker:
-                self._cost_tracker.set_agent("critic")
-            _emit_progress(
-                progress_callback,
-                PipelineProgressEvent(
-                    stage=PipelineProgressStage.CRITIC_START,
-                    message="Critic reviewing",
-                    iteration=i + 1,
-                ),
-            )
-            critic_start = time.perf_counter()
-            try:
-                critique = await _call_with_retry(
-                    "critic",
-                    self.critic.run,
-                    image_path=image_path,
-                    description=current_description,
-                    source_context=input.source_context,
-                    caption=input.communicative_intent,
-                    diagram_type=input.diagram_type,
-                )
-            except Exception:
-                logger.warning(
-                    "Critic failed after retries, accepting current image",
-                    iteration=iter_index,
-                    exc_info=True,
-                )
-                critique = CritiqueResult()
-            critic_seconds = time.perf_counter() - critic_start
-            _emit_progress(
-                progress_callback,
-                PipelineProgressEvent(
-                    stage=PipelineProgressStage.CRITIC_END,
-                    message="Critic done",
-                    seconds=critic_seconds,
-                    iteration=i + 1,
-                    extra={
-                        "needs_revision": critique.needs_revision,
-                        "summary": critique.summary,
-                        "critic_suggestions": critique.critic_suggestions[:3],
-                    },
-                ),
-            )
-            self._emit_progress(
-                "critic_completed",
-                iteration=iter_index,
-                seconds=round(critic_seconds, 1),
-                needs_revision=critique.needs_revision,
-            )
+        iterations: list[IterationRecord] = branch["iterations"]
+        iteration_timings = branch["iteration_timings"]
+        rollback_info: Optional[Dict[str, Any]] = branch["rollback_info"]
+        current_description = branch["final_description"]
+        budget_exceeded = branch["budget_exceeded"]
+        phase2_vector_paths: dict[str, str] = branch["vector_paths"]
 
-            iteration_record = IterationRecord(
-                iteration=iter_index,
-                description=current_description,
-                image_path=image_path,
-                critique=critique,
-            )
-            iteration_timings.append(
-                {
-                    "iteration": iter_index,
-                    "visualizer_seconds": visualizer_seconds,
-                    "critic_seconds": critic_seconds,
-                }
-            )
-            iterations.append(iteration_record)
-
-            # Save iteration artifacts
-            if self.settings.save_iterations:
-                iter_dir = ensure_dir(self._run_dir / f"iter_{i + 1}")
-                save_json(
-                    {
-                        "description": current_description,
-                        "critique": critique.model_dump(),
-                    },
-                    iter_dir / "details.json",
-                )
-
-            # Check if revision needed
-            if critique.needs_revision and critique.revised_description:
-                logger.info(
-                    "Revision needed",
-                    iteration=iter_index,
-                    summary=critique.summary,
-                )
-                current_description = critique.revised_description
-            else:
-                logger.info(
-                    "No further revision needed",
-                    iteration=iter_index,
-                    summary=critique.summary,
-                )
-                self._emit_progress(
-                    "iteration_completed",
-                    iteration=iter_index,
-                    total_iterations=len(iterations),
-                    needs_revision=critique.needs_revision,
-                )
-                break
-
-            self._emit_progress(
-                "iteration_completed",
-                iteration=iter_index,
-                total_iterations=len(iterations),
-                needs_revision=critique.needs_revision,
-            )
-
-            # Check budget between iterations
-            if self._check_budget("between iterations", iteration=iter_index):
-                budget_exceeded = True
-                break
-
-        # Final output
+        # Final output (with multi-candidate fan-out, the run-root output is
+        # the primary candidate: candidate 1 unless it failed)
         output_format = getattr(self.settings, "output_format", "png").lower()
         final_output_path = self._build_final_output(
             iterations,
@@ -1559,6 +1782,10 @@ class PaperBananaPipeline:
         }
         if rollback_info is not None:
             metadata_dict["rollback"] = rollback_info
+        if candidates_meta is not None:
+            metadata_dict["num_candidates"] = num_candidates
+            metadata_dict["primary_candidate"] = primary_candidate_index
+            metadata_dict["candidates"] = candidates_meta
         if generated_caption is not None:
             metadata_dict["generated_caption"] = generated_caption
         if ir_planner_status is not None:
@@ -1582,8 +1809,9 @@ class PaperBananaPipeline:
             metadata_dict["cost"] = cost_summary
 
         # Include vector output paths when vector export was requested
-        if self.settings.vector_export != "none" and self.visualizer._last_vector_paths:
-            metadata_dict["vector_output_paths"] = self.visualizer._last_vector_paths
+        # (from the primary Phase-2 branch's visualizer instance)
+        if self.settings.vector_export != "none" and phase2_vector_paths:
+            metadata_dict["vector_output_paths"] = phase2_vector_paths
 
         # Always write metadata (including cost) to disk for every run
         if tikz_path:

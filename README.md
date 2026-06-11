@@ -263,6 +263,7 @@ paperbanana generate \
 | `--caption` | `-c` | Figure caption / communicative intent (required for new runs) |
 | `--output` | `-o` | Output image path (default: auto-generated in `outputs/`) |
 | `--iterations` | `-n` | Number of Visualizer-Critic refinement rounds (default: 3) |
+| `--num-candidates` | `-k` | Generate N candidate images in parallel, 1-8 (default: 1). Planning runs once; refinement fans out per candidate with seed offsets. Outputs land in `candidates/cand_<i>/`; the run-root `final_output` is candidate 1. Cost estimates and `--budget` account for the fan-out |
 | `--auto` | | Loop until critic is satisfied (with `--max-iterations` safety cap) |
 | `--max-iterations` | | Safety cap for `--auto` mode (default: 30) |
 | `--optimize` | | Preprocess inputs with parallel context enrichment and caption sharpening |
