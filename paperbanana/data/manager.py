@@ -2,12 +2,19 @@
 
 Cache layout:
     ~/.cache/paperbanana/              (or PAPERBANANA_CACHE_DIR)
-    └── reference_sets/
-        ├── index.json
-        ├── dataset_info.json          (version + revision tracking)
-        └── images/
-            ├── ref_001.jpg
-            └── ...
+    ├── reference_sets/
+    │   ├── index.json
+    │   ├── dataset_info.json          (version + revision tracking)
+    │   └── images/
+    │       ├── ref_001.jpg
+    │       └── ...
+    └── test_split/                    (official PaperBananaBench test split)
+        ├── diagram/
+        │   ├── test.json
+        │   └── images/
+        └── plot/
+            ├── test.json
+            └── images/
 """
 
 from __future__ import annotations
@@ -19,9 +26,12 @@ import tempfile
 import unicodedata
 import zipfile
 from pathlib import Path
-from typing import Callable, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
 import structlog
+
+if TYPE_CHECKING:
+    from paperbanana.core.types import TestCase
 
 logger = structlog.get_logger()
 
@@ -101,6 +111,19 @@ class DatasetManager:
     def info_path(self) -> Path:
         """Path to dataset version info."""
         return self.reference_dir / "dataset_info.json"
+
+    @property
+    def test_split_dir(self) -> Path:
+        """Directory containing the cached official test split."""
+        return self._cache_dir / "test_split"
+
+    def test_split_index_path(self, task: str) -> Path:
+        """Path to the cached, normalized test.json for a task."""
+        return self.test_split_dir / task / "test.json"
+
+    def is_test_split_downloaded(self, task: str) -> bool:
+        """Check if the official test split for *task* is cached."""
+        return self.test_split_index_path(task).exists()
 
     def is_downloaded(self) -> bool:
         """Check if an expanded reference set is available in cache.
@@ -216,17 +239,63 @@ class DatasetManager:
             bench_examples = _import_from_bench(bench_dir, task, images_dir)
             count = _merge_index(self.index_path, bench_examples)
 
+            # Cache the official test split alongside the reference import
+            _log("Caching official test split...")
+            test_count = _import_test_split(bench_dir, task, self.test_split_dir)
+
             # Update dataset_info.json
             self._record_dataset(
                 "full_bench",
                 DATASET_VERSION,
                 DATASET_URL,
                 count,
-                extra={"revision": DATASET_RELEASE_TAG, "task": task},
+                extra={
+                    "revision": DATASET_RELEASE_TAG,
+                    "task": task,
+                    "test_cases": test_count,
+                },
             )
 
             _log(f"Cached {count} reference examples to {self.reference_dir}")
+            if test_count:
+                _log(f"Cached {test_count} official test cases to {self.test_split_dir}")
             return count
+
+    def load_test_split(self, task: str = "diagram") -> list[TestCase]:
+        """Load the official PaperBananaBench test split for a task.
+
+        Args:
+            task: Which split to load ('diagram' or 'plot').
+
+        Returns:
+            List of typed TestCase entries with absolute ground-truth image paths.
+
+        Raises:
+            ValueError: If *task* is not 'diagram' or 'plot'.
+            RuntimeError: If the test split has not been downloaded yet.
+        """
+        from paperbanana.core.types import TestCase
+
+        if task not in ("diagram", "plot"):
+            raise ValueError(f"task must be 'diagram' or 'plot', got: {task}")
+
+        index_path = self.test_split_index_path(task)
+        if not index_path.exists():
+            raise RuntimeError(
+                f"Official test split for task '{task}' not found at {index_path}. "
+                "Run 'paperbanana data download --force' to fetch and cache it."
+            )
+
+        with open(index_path, encoding="utf-8") as f:
+            data = json.load(f)
+
+        task_dir = index_path.parent
+        cases: list[TestCase] = []
+        for raw in data.get("cases", []):
+            raw = dict(raw)
+            raw["gt_image_path"] = str(task_dir / raw.get("gt_image_path", ""))
+            cases.append(TestCase(**raw))
+        return cases
 
     def _record_dataset(
         self,
@@ -270,6 +339,9 @@ class DatasetManager:
         if self.reference_dir.exists():
             shutil.rmtree(self.reference_dir)
             logger.info("Cleared cached dataset", path=str(self.reference_dir))
+        if self.test_split_dir.exists():
+            shutil.rmtree(self.test_split_dir)
+            logger.info("Cleared cached test split", path=str(self.test_split_dir))
 
 
 def _download_file(url: str, dest: Path) -> None:
@@ -465,6 +537,103 @@ def _import_from_bench(
         raise RuntimeError("No examples could be imported from the dataset.")
 
     return all_examples
+
+
+def _import_test_split(
+    bench_dir: Path,
+    task: str,
+    dest_root: Path,
+) -> int:
+    """Cache the official test split (test.json + images) in normalized form.
+
+    Converts each upstream test entry to the TestCase schema and copies its
+    ground-truth image into ``dest_root/<task>/images/<id><ext>`` (ID-based
+    names sidestep Unicode-normalization issues in cached filenames). Writes
+    ``dest_root/<task>/test.json`` per task.
+
+    Args:
+        bench_dir: Extracted PaperBananaBench directory.
+        task: 'diagram', 'plot', or 'both'.
+        dest_root: Destination root for the cached test split.
+
+    Returns:
+        Total number of imported test cases across tasks.
+    """
+    tasks = ["diagram", "plot"] if task == "both" else [task]
+    total = 0
+
+    for t in tasks:
+        task_dir = bench_dir / t
+        test_file = task_dir / "test.json"
+
+        if not test_file.exists():
+            logger.warning("Task test.json not found, skipping", task=t, path=str(test_file))
+            continue
+
+        with open(test_file, encoding="utf-8") as f:
+            entries = json.load(f)
+
+        source_images_dir = task_dir / "images"
+        dest_dir = dest_root / t
+        images_dir = dest_dir / "images"
+        images_dir.mkdir(parents=True, exist_ok=True)
+
+        cases: list[dict] = []
+        for entry in entries:
+            entry_id = str(entry.get("id", ""))
+            gt_image_rel = entry.get("path_to_gt_image", "")
+            if not entry_id or not gt_image_rel:
+                continue
+
+            source_image = _resolve_image(source_images_dir, gt_image_rel)
+            if source_image is None:
+                logger.warning("Test image not found, skipping", id=entry_id, path=gt_image_rel)
+                continue
+
+            dest_filename = f"{entry_id}{source_image.suffix or '.jpg'}"
+            dest_image = images_dir / dest_filename
+            if not dest_image.exists():
+                shutil.copy2(source_image, dest_image)
+
+            content = entry.get("content", "")
+            raw_data = content if isinstance(content, dict) else None
+            if isinstance(content, (dict, list)):
+                source_context = json.dumps(content, indent=2)
+            else:
+                source_context = content
+
+            additional = entry.get("additional_info") or {}
+            cases.append(
+                {
+                    "id": entry_id,
+                    "task": t,
+                    "category": entry.get("category", "") or "",
+                    "source_context": source_context,
+                    "caption": entry.get("visual_intent", ""),
+                    "gt_image_path": f"images/{dest_filename}",
+                    "aspect_ratio": additional.get("rounded_ratio"),
+                    "raw_data": raw_data,
+                    "gt_code": additional.get("gt_code"),
+                    "difficulty": entry.get("difficulty"),
+                }
+            )
+
+        index_data = {
+            "metadata": {
+                "name": f"paperbananabench_test_{t}",
+                "description": f"Official PaperBananaBench {t} test split ({len(cases)} cases).",
+                "task": t,
+                "total_cases": len(cases),
+            },
+            "cases": cases,
+        }
+        with open(dest_dir / "test.json", "w", encoding="utf-8") as f:
+            json.dump(index_data, f, indent=2, ensure_ascii=False)
+
+        total += len(cases)
+        logger.info("Imported test split", task=t, count=len(cases), total=len(entries))
+
+    return total
 
 
 def resolve_reference_path(

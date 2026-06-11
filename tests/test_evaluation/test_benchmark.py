@@ -434,3 +434,113 @@ async def test_benchmark_runner_eval_only_rejects_path_traversal(tmp_path):
     assert report.completed == 0
     assert report.entries[0].error is not None
     assert "invalid entry id" in report.entries[0].error.lower()
+
+
+# ── Official test split (issue #235) ─────────────────────────────
+
+
+def _make_test_cases() -> list:
+    from paperbanana.core.types import TestCase
+
+    return [
+        TestCase(
+            id="t1",
+            task="diagram",
+            category="vision",
+            source_context="methodology text",
+            caption="Overview of the framework",
+            gt_image_path="/gt/t1.jpg",
+            aspect_ratio="16:9",
+        ),
+        TestCase(
+            id="t2",
+            task="plot",
+            source_context='{"x": [1, 2]}',
+            caption="Bar chart",
+            gt_image_path="/gt/t2.jpg",
+            aspect_ratio="3:2",
+            raw_data={"x": [1, 2]},
+            gt_code="plt.bar([1], [2])",
+            difficulty="easy",
+        ),
+    ]
+
+
+def test_testcase_filtering_works_like_reference():
+    cases = _make_test_cases()
+    assert len(filter_examples(cases, category="vision")) == 1
+    assert filter_examples(cases, ids=["t2"])[0].id == "t2"
+    assert len(filter_examples(cases, limit=1)) == 1
+
+
+def test_run_rejects_unknown_mode():
+    import asyncio
+
+    runner = BenchmarkRunner(Settings(), judge_factory=lambda s: object())
+    with pytest.raises(ValueError, match="mode must be"):
+        asyncio.run(runner.run([], mode="bogus"))
+
+
+class _MockVisualizer:
+    """Captures vanilla-mode calls and writes a fake output image."""
+
+    def __init__(self):
+        self.calls = []
+
+    def set_output_dir(self, path):
+        self.out_dir = path
+
+    async def run(self, **kwargs):
+        self.calls.append(kwargs)
+        from pathlib import Path
+
+        out = Path(kwargs["output_path"])
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"img")
+        return str(out)
+
+
+class _MockJudge:
+    async def evaluate(self, **kwargs):
+        dim = DimensionResult(score=8, rationale="ok", winner="Both are good")
+        return EvaluationScore(
+            faithfulness=dim,
+            conciseness=dim,
+            readability=dim,
+            aesthetics=dim,
+            overall_winner="Both are good",
+            overall_score=8.0,
+        )
+
+
+async def test_vanilla_mode_single_visualizer_call(tmp_path):
+    """Vanilla mode makes exactly one direct visualizer call per entry,
+
+    threading the official aspect ratio, and never builds the pipeline."""
+    visualizer = _MockVisualizer()
+
+    def _fail_pipeline(settings):
+        raise AssertionError("pipeline must not be constructed in vanilla mode")
+
+    runner = BenchmarkRunner(
+        Settings(output_dir=str(tmp_path)),
+        pipeline_factory=_fail_pipeline,
+        judge_factory=lambda s: _MockJudge(),
+        visualizer_factory=lambda s: visualizer,
+    )
+    gt = tmp_path / "gt.jpg"
+    gt.write_bytes(b"gt-image")
+    diagram_case = _make_test_cases()[0].model_copy(update={"gt_image_path": str(gt)})
+    report = await runner.run(
+        [diagram_case], output_dir=tmp_path / "run", mode="vanilla", split="test", task="diagram"
+    )
+
+    assert len(visualizer.calls) == 1
+    call = visualizer.calls[0]
+    assert call["aspect_ratio"] == "16:9"
+    assert call["iteration"] == 1
+    entry_result = report.entries[0]
+    assert entry_result.error is None
+    assert entry_result.iteration_count == 1
+    assert report.mode == "vanilla"
+    assert report.split == "test"

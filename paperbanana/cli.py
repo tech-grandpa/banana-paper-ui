@@ -3170,6 +3170,27 @@ def benchmark(
     ),
     auto: bool = typer.Option(False, "--auto", help="Loop until critic satisfied per entry"),
     optimize: bool = typer.Option(False, "--optimize", help="Preprocess inputs per entry"),
+    split: str = typer.Option(
+        "reference",
+        "--split",
+        help=(
+            "Entry source: 'reference' (curated pool) or 'test' "
+            "(official PaperBananaBench test split — comparable to the paper)"
+        ),
+    ),
+    task: str = typer.Option(
+        "diagram",
+        "--task",
+        help="Task for --split test: 'diagram' (292 entries) or 'plot' (240 entries)",
+    ),
+    mode: str = typer.Option(
+        "full",
+        "--mode",
+        help=(
+            "'full' runs the complete agentic pipeline; 'vanilla' is the no-pipeline "
+            "baseline (single direct visualizer call, no planning/critique)"
+        ),
+    ),
     category: Optional[str] = typer.Option(
         None, "--category", help="Only run entries in this category"
     ),
@@ -3205,6 +3226,15 @@ def benchmark(
         raise typer.Exit(1)
     if concurrency < 1:
         console.print("[red]Error: --concurrency must be at least 1[/red]")
+        raise typer.Exit(1)
+    if split not in ("reference", "test"):
+        console.print(f"[red]Error: --split must be 'reference' or 'test'. Got: {split}[/red]")
+        raise typer.Exit(1)
+    if task not in ("diagram", "plot"):
+        console.print(f"[red]Error: --task must be 'diagram' or 'plot'. Got: {task}[/red]")
+        raise typer.Exit(1)
+    if mode not in ("full", "vanilla"):
+        console.print(f"[red]Error: --mode must be 'full' or 'vanilla'. Got: {mode}[/red]")
         raise typer.Exit(1)
 
     configure_logging(verbose=verbose)
@@ -3247,8 +3277,11 @@ def benchmark(
     # Load and filter entries
     id_list = [s.strip() for s in ids.split(",") if s.strip()] if ids else None
     try:
-        entries = runner.load_entries(category=category, ids=id_list, limit=limit)
-    except ValueError as e:
+        if split == "test":
+            entries = runner.load_test_entries(task, category=category, ids=id_list, limit=limit)
+        else:
+            entries = runner.load_entries(category=category, ids=id_list, limit=limit)
+    except (ValueError, RuntimeError) as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
 
@@ -3256,12 +3289,14 @@ def benchmark(
         console.print("[red]Error: No entries match the given filters.[/red]")
         raise typer.Exit(1)
 
-    mode = "eval-only" if eval_only else "generate + evaluate"
+    run_mode = "eval-only" if eval_only else f"{mode} (generate + evaluate)"
+    split_label = f"test ({task})" if split == "test" else "reference"
     console.print(
         Panel.fit(
             f"[bold]PaperBanana[/bold] — Benchmark\n\n"
             f"Entries: {len(entries)}\n"
-            f"Mode: {mode}\n"
+            f"Split: {split_label}\n"
+            f"Mode: {run_mode}\n"
             f"VLM: {settings.vlm_provider} / {settings.effective_vlm_model}\n"
             f"Image: {settings.image_provider} / {settings.effective_image_model}",
             border_style="magenta",
@@ -3272,7 +3307,14 @@ def benchmark(
     bench_output_dir = Path(output_dir) if output_dir else None
 
     async def _run():
-        return await runner.run(entries, output_dir=bench_output_dir, eval_only_dir=eval_only)
+        return await runner.run(
+            entries,
+            output_dir=bench_output_dir,
+            eval_only_dir=eval_only,
+            mode=mode,
+            split=split,
+            task=task if split == "test" else None,
+        )
 
     report = asyncio.run(_run())
     summary = report.summary
@@ -3313,6 +3355,17 @@ def benchmark(
         for cat, stats in cat_breakdown.items():
             console.print(
                 f"  {cat:30s} n={stats['count']:3d}  "
+                f"win_rate={stats['model_win_rate']:5.1f}%  "
+                f"mean={stats['mean_score']:.1f}"
+            )
+
+    # Per-difficulty breakdown (official plot test split)
+    diff_breakdown = summary.get("difficulty_breakdown", {})
+    if diff_breakdown:
+        console.print("\n[bold]Per-difficulty breakdown:[/bold]")
+        for diff, stats in diff_breakdown.items():
+            console.print(
+                f"  {diff:30s} n={stats['count']:3d}  "
                 f"win_rate={stats['model_win_rate']:5.1f}%  "
                 f"mean={stats['mean_score']:.1f}"
             )
