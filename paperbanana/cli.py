@@ -714,8 +714,8 @@ def generate(
                 "[bold]PaperBanana[/bold] - Dry Run\n\n"
                 f"Input: {input_path}{pdf_note}\n"
                 f"Caption: {caption}\n"
-                f"VLM: {settings.vlm_provider} / {settings.vlm_model}\n"
-                f"Image: {settings.image_provider} / {settings.image_model}\n"
+                f"VLM: {settings.vlm_provider} / {settings.effective_vlm_model}\n"
+                f"Image: {settings.image_provider} / {settings.effective_image_model}\n"
                 f"Iterations: {settings.refinement_iterations}\n"
                 f"Output: {expected_output}",
                 border_style="yellow",

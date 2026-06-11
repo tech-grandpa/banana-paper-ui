@@ -96,6 +96,16 @@ ruff format paperbanana/ mcp_server/ tests/ scripts/
 4. Ensure `pytest` and `ruff check` pass
 5. Open a PR with a brief description of what changed and why
 
+### What we accept (and what we don't)
+
+To keep the review queue healthy, a few ground rules:
+
+- **CI must be green.** PRs with failing lint or tests won't be reviewed until they pass; `ruff check`, `ruff format --check`, and `pytest` locally before pushing saves everyone a round-trip.
+- **No personal or institution-specific content.** Your university's thesis style, your paper's figures, or `.docx`/example files specific to your own project belong in a fork. Generic, configurable mechanisms (e.g. a venue/style system anyone can use) are very welcome — see issue #89.
+- **New providers go through the generic routes first.** PaperBanana supports any OpenAI-compatible endpoint via `openai_local`, plus `litellm` for almost everything else. We only add first-class provider modules when there's a strong case (significant user demand or a sponsorship that funds its maintenance — see SPONSORS.md). A docs example showing your provider via `litellm` is the fastest way to get it supported.
+- **Don't change project-wide defaults** (models, styles, providers) in a feature PR. Defaults are a maintainer decision with cost/quality implications for every user; propose the change in an issue instead.
+- **Stale PRs may be finished by maintainers.** If a PR is approved-with-comments and the author doesn't respond within ~2 weeks, a maintainer may push the remaining fixes to the branch (with credit preserved) and merge it, so good work doesn't strand.
+
 ### Areas where code contributions are welcome
 
 - **Provider support**: Adding backends beyond OpenAI and Gemini (Anthropic, local models via Ollama)
