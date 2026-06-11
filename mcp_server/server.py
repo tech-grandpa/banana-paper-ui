@@ -11,7 +11,7 @@ Tools:
     continue_plot       — Continue a prior statistical-plot run
     evaluate_diagram    — Evaluate a generated diagram against a reference
     evaluate_plot       — Evaluate a generated plot against a reference
-    download_references — Download expanded reference set (~294 examples)
+    download_references — Download the PaperBananaBench reference set (~298 examples)
     orchestrate_figures — Full-paper figure package (plan + optional generation)
     batch_diagrams      — Batch methodology diagrams from a YAML/JSON manifest
     batch_plots         — Batch statistical plots from a YAML/JSON manifest
@@ -583,11 +583,12 @@ async def evaluate_plot(
 async def download_references(
     force: bool = False,
 ) -> str:
-    """Download the expanded reference set from official PaperBananaBench.
+    """Download the PaperBananaBench reference set.
 
-    Downloads ~257MB of reference diagrams (294 examples) from HuggingFace
-    and caches them locally. The Retriever agent uses these for better
-    in-context learning during diagram generation.
+    Downloads ~254 MB of reference diagrams (~298 examples) from the
+    project-hosted GitHub release mirror (SHA256-verified) and caches them
+    locally. The Retriever agent uses these for better in-context learning
+    during diagram generation.
 
     Only needs to be run once — subsequent calls detect the cached data
     and return immediately. Use force=True to re-download.
@@ -604,11 +605,14 @@ async def download_references(
 
     if dm.is_downloaded() and not force:
         info = dm.get_info() or {}
+        version = info.get("dataset_meta", {}).get("full_bench", {}).get("version") or info.get(
+            "version", "unknown"
+        )
         return (
             f"Expanded reference set already cached.\n"
             f"Location: {dm.reference_dir}\n"
             f"Examples: {dm.get_example_count()}\n"
-            f"Version: {info.get('version', 'unknown')}\n"
+            f"Version: {version}\n"
             f"Use force=True to re-download."
         )
 

@@ -120,9 +120,9 @@ def test_check_expanded_refs_downloaded(tmp_path, monkeypatch):
     (ref_dir / "dataset_info.json").write_text(
         json.dumps(
             {
-                "datasets": ["curated"],
+                "datasets": ["full_bench"],
                 "example_count": 2,
-                "dataset_meta": {"curated": {"version": "1.0.0", "source": "test"}},
+                "dataset_meta": {"full_bench": {"version": "1.0.0", "source": "test"}},
             }
         ),
         encoding="utf-8",

@@ -314,7 +314,9 @@ def generate(
     auto_download_data: bool = typer.Option(
         False,
         "--auto-download-data",
-        help="Auto-download curated expansion reference set on first run if not cached",
+        help=(
+            "Auto-download the PaperBananaBench reference set (~254 MB) on first run if not cached"
+        ),
     ),
     reference_ids: Optional[str] = typer.Option(
         None,
@@ -527,16 +529,16 @@ def generate(
 
     from paperbanana.core.pipeline import PaperBananaPipeline
 
-    # ── Auto-download curated expansion if requested ────────────────────
+    # ── Auto-download reference set if requested ────────────────────────
     if auto_download_data:
         from paperbanana.data.manager import DatasetManager
 
         dm = DatasetManager(cache_dir=settings.cache_dir)
         if not dm.is_downloaded():
             console.print()
-            console.print("  [dim]●[/dim] Downloading curated expansion set...", end="")
+            console.print("  [dim]●[/dim] Downloading PaperBananaBench reference set...", end="")
             try:
-                count = dm.download(dataset="curated")
+                count = dm.download()
                 console.print(f" [green]✓[/green] [dim]{count} examples cached[/dim]")
             except Exception as e:
                 console.print(f" [red]✗[/red] Download failed: {e}")
@@ -791,9 +793,7 @@ def generate(
                 "  [dim]Using built-in reference set"
                 f" ({ref_count} examples). For better results:[/dim]"
             )
-            console.print(
-                "  [dim]  paperbanana data download --curated   # or --auto-download-data[/dim]"
-            )
+            console.print("  [dim]  paperbanana data download   # or --auto-download-data[/dim]")
 
         def on_progress(event: PipelineProgressEvent) -> None:
             if event.stage == PipelineProgressStage.OPTIMIZER_START:
@@ -1243,7 +1243,9 @@ def sweep(
     auto_download_data: bool = typer.Option(
         False,
         "--auto-download-data",
-        help="Auto-download expanded reference set (~257MB) on first run if not cached",
+        help=(
+            "Auto-download the PaperBananaBench reference set (~254 MB) on first run if not cached"
+        ),
     ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed progress"),
 ):
@@ -1542,7 +1544,11 @@ def batch(
         help="Target venue style (neurips, icml, acl, ieee, custom)",
     ),
     auto_download_data: bool = typer.Option(
-        False, "--auto-download-data", help="Auto-download curated expansion if needed"
+        False,
+        "--auto-download-data",
+        help=(
+            "Auto-download the PaperBananaBench reference set (~254 MB) on first run if not cached"
+        ),
     ),
     resume_batch: Optional[str] = typer.Option(
         None, "--resume-batch", help="Batch ID or batch directory to resume"
@@ -3604,48 +3610,37 @@ def download(
     task: str = typer.Option(
         "diagram",
         "--task",
-        help="Which references to import: diagram, plot, or both (full_bench only)",
-    ),
-    curated: bool = typer.Option(
-        False,
-        "--curated",
-        help="Download the lightweight curated expansion instead of the full benchmark",
+        help="Which references to import: diagram, plot, or both",
     ),
     force: bool = typer.Option(False, "--force", help="Re-download even if already cached"),
 ):
-    """Download an expanded reference set.
+    """Download the PaperBananaBench reference set (~254 MB).
 
-    By default downloads the full PaperBananaBench (~257MB).
-    Use --curated for the lightweight curated expansion (~20-35 images).
+    Fetches the project-hosted GitHub release mirror and verifies its
+    SHA256 checksum before caching.
     """
     from paperbanana.data.manager import DatasetManager
 
-    dataset = "curated" if curated else "full_bench"
-    if curated and task != "diagram":
-        console.print("[yellow]Warning:[/yellow] --task is ignored when --curated is set.")
     dm = DatasetManager()
-    if dm.is_downloaded(dataset=dataset) and not force:
+    if dm.is_downloaded() and not force:
         info = dm.get_info() or {}
         meta = info.get("dataset_meta", {})
-        ds_version = meta.get(dataset, {}).get("version", info.get("version", "unknown"))
+        ds_version = meta.get("full_bench", {}).get("version", info.get("version", "unknown"))
         console.print(
             Panel.fit(
                 f"[bold]Reference Set — Already Cached[/bold]\n\n"
                 f"Location: {dm.reference_dir}\n"
                 f"Examples: {dm.get_example_count()}\n"
-                f"Version: {ds_version}\n"
-                f"Datasets: {', '.join(info.get('datasets', ['unknown']))}",
+                f"Version: {ds_version}",
                 border_style="green",
             )
         )
         console.print("\nUse [bold]--force[/bold] to re-download.")
         return
 
-    label = "Curated Expansion" if curated else "Full PaperBananaBench"
-    console.print(f"[bold]PaperBanana[/bold] — Downloading {label}\n")
+    console.print("[bold]PaperBanana[/bold] — Downloading PaperBananaBench\n")
     try:
         count = dm.download(
-            dataset=dataset,
             task=task,
             force=force,
             progress_callback=lambda msg: console.print(f"  [dim]●[/dim] {msg}"),

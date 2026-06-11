@@ -355,7 +355,7 @@ Rendered sweep reports include a summary, a top-5 ranked table, the full variant
 | `--optimize` | | Preprocess inputs for each item |
 | `--auto` | | Loop until critic satisfied per item |
 | `--format` | `-f` | Output image format (png, jpeg, webp) |
-| `--auto-download-data` | | Download expanded reference set if needed |
+| `--auto-download-data` | | Auto-download the PaperBananaBench reference set (~254 MB) if not cached |
 
 ### `paperbanana plot-batch` -- Batch Statistical Plots
 
@@ -510,6 +510,29 @@ paperbanana setup
 
 Interactive wizard that first asks whether to use the official Gemini API.
 If you choose official API, it follows the default AI Studio key flow; if not, it asks for a custom Gemini-compatible URL and API key.
+
+### `paperbanana data` -- Reference Dataset
+
+```bash
+# Download the PaperBananaBench reference set (~254 MB, one command)
+paperbanana data download
+
+# Import plot references too (or both)
+paperbanana data download --task plot
+paperbanana data download --task both
+
+# Inspect / clear the cache
+paperbanana data info
+paperbanana data clear
+```
+
+The dataset is served from a project-hosted GitHub release mirror
+([`bench-data-v1`](https://github.com/llmsresearch/paperbanana/releases/tag/bench-data-v1))
+and its SHA256 checksum is verified before extraction. Credit to the
+[PaperBananaBench](https://huggingface.co/datasets/dwzhu/PaperBananaBench) authors —
+the mirror tracks their 2026-03-22 revision. The set is cached under
+`~/.cache/paperbanana/` (override with `PAPERBANANA_CACHE_DIR`); generation
+commands can also fetch it on first use via `--auto-download-data`.
 
 ---
 

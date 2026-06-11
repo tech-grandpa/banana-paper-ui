@@ -146,9 +146,9 @@ def run_methodology_batch(
         dm = DatasetManager(cache_dir=settings.cache_dir)
         if not dm.is_downloaded():
             try:
-                dm.download(dataset="curated")
+                dm.download()
             except Exception as e:
-                logger.warning("curated_download_failed", error=str(e))
+                logger.warning("reference_download_failed", error=str(e))
 
     state = init_or_load_checkpoint(
         batch_dir=batch_dir,

@@ -1,17 +1,20 @@
-"""Tests for DatasetManager lazy-download and curated expansion support."""
+"""Tests for DatasetManager lazy-download, checksum verification, and caching."""
 
 from __future__ import annotations
 
+import hashlib
+import inspect
 import json
-import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
+import paperbanana.data.manager as manager_mod
 from paperbanana.data.manager import (
     DatasetManager,
     _merge_index,
+    _verify_sha256,
     resolve_reference_path,
 )
 
@@ -72,6 +75,22 @@ class TestMergeIndex:
         assert count == 1
 
 
+# ── _verify_sha256 ────────────────────────────────────────────────────
+
+
+class TestVerifySha256:
+    def test_matching_checksum_passes(self, tmp_path):
+        f = tmp_path / "data.bin"
+        f.write_bytes(b"hello world")
+        _verify_sha256(f, hashlib.sha256(b"hello world").hexdigest())
+
+    def test_mismatch_raises_runtime_error(self, tmp_path):
+        f = tmp_path / "data.bin"
+        f.write_bytes(b"hello world")
+        with pytest.raises(RuntimeError, match="SHA256 mismatch"):
+            _verify_sha256(f, "0" * 64)
+
+
 # ── DatasetManager.is_downloaded ──────────────────────────────────────
 
 
@@ -84,45 +103,28 @@ class TestIsDownloaded:
         tmp_cache.info_path.write_text(
             json.dumps(
                 {
-                    "datasets": ["curated"],
+                    "datasets": ["full_bench"],
                     "version": "1.0.0",
                 }
             )
         )
         assert tmp_cache.is_downloaded()
-        assert tmp_cache.is_downloaded(dataset="curated")
-        assert not tmp_cache.is_downloaded(dataset="full_bench")
-
-    def test_true_with_both_datasets(self, tmp_cache):
-        tmp_cache.reference_dir.mkdir(parents=True)
-        tmp_cache.info_path.write_text(
-            json.dumps(
-                {
-                    "datasets": ["curated", "full_bench"],
-                    "version": "1.0.0",
-                }
-            )
-        )
-        assert tmp_cache.is_downloaded()
-        assert tmp_cache.is_downloaded(dataset="curated")
-        assert tmp_cache.is_downloaded(dataset="full_bench")
 
     def test_back_compat_old_format(self, tmp_cache):
-        """Old dataset_info.json without 'datasets' key but with DATASET_URL source."""
-        from paperbanana.data.manager import DATASET_URL
-
+        """Old dataset_info.json without 'datasets' key but with a top-level source."""
         tmp_cache.reference_dir.mkdir(parents=True)
         tmp_cache.info_path.write_text(
             json.dumps(
                 {
                     "version": "1.0.0",
-                    "source": DATASET_URL,
+                    "source": (
+                        "https://huggingface.co/datasets/dwzhu/PaperBananaBench"
+                        "/resolve/main/PaperBananaBench.zip"
+                    ),
                 }
             )
         )
         assert tmp_cache.is_downloaded()
-        assert tmp_cache.is_downloaded(dataset="full_bench")
-        assert not tmp_cache.is_downloaded(dataset="curated")
 
     def test_legacy_cache_index_only(self, tmp_cache):
         """Caches with index.json but no dataset_info.json count as downloaded."""
@@ -136,9 +138,6 @@ class TestIsDownloaded:
             )
         )
         assert tmp_cache.is_downloaded()
-        # But a specific dataset query still returns False
-        assert not tmp_cache.is_downloaded(dataset="full_bench")
-        assert not tmp_cache.is_downloaded(dataset="curated")
 
     def test_false_with_corrupt_info(self, tmp_cache):
         tmp_cache.reference_dir.mkdir(parents=True)
@@ -150,59 +149,68 @@ class TestIsDownloaded:
 
 
 class TestRecordDataset:
-    def test_records_new_dataset(self, tmp_cache):
+    def test_records_dataset(self, tmp_cache):
         tmp_cache.reference_dir.mkdir(parents=True)
-        tmp_cache._record_dataset("curated", "1.0.0", "https://example.com", 25)
+        tmp_cache._record_dataset("full_bench", "1.0.0", "https://example.com", 298)
         info = json.loads(tmp_cache.info_path.read_text())
-        assert "curated" in info["datasets"]
-        assert info["example_count"] == 25
-        assert info["dataset_meta"]["curated"]["version"] == "1.0.0"
-        assert info["dataset_meta"]["curated"]["source"] == "https://example.com"
+        assert "full_bench" in info["datasets"]
+        assert info["example_count"] == 298
+        assert info["dataset_meta"]["full_bench"]["version"] == "1.0.0"
+        assert info["dataset_meta"]["full_bench"]["source"] == "https://example.com"
 
-    def test_preserves_existing_datasets(self, tmp_cache):
+    def test_no_top_level_version_or_source(self, tmp_cache):
         tmp_cache.reference_dir.mkdir(parents=True)
-        tmp_cache._record_dataset("curated", "1.0.0", "https://curated.example.com", 25)
         tmp_cache._record_dataset("full_bench", "2.0.0", "https://bench.example.com", 294)
         info = json.loads(tmp_cache.info_path.read_text())
-        assert sorted(info["datasets"]) == ["curated", "full_bench"]
-        assert info["dataset_meta"]["curated"]["version"] == "1.0.0"
-        assert info["dataset_meta"]["curated"]["source"] == "https://curated.example.com"
-        assert info["dataset_meta"]["full_bench"]["version"] == "2.0.0"
-
-    def test_per_dataset_meta_not_overwritten(self, tmp_cache):
-        tmp_cache.reference_dir.mkdir(parents=True)
-        tmp_cache._record_dataset("curated", "1.0.0", "https://curated.example.com", 25)
-        tmp_cache._record_dataset("full_bench", "2.0.0", "https://bench.example.com", 294)
-        info = json.loads(tmp_cache.info_path.read_text())
-        # top-level version/source should not exist
         assert "version" not in info
         assert "source" not in info
-        # per-dataset metadata preserved
-        assert info["dataset_meta"]["curated"]["source"] == "https://curated.example.com"
         assert info["dataset_meta"]["full_bench"]["source"] == "https://bench.example.com"
 
     def test_back_compat_upgrade(self, tmp_cache):
-        """Recording a new dataset upgrades old-format info to include datasets list."""
-        from paperbanana.data.manager import DATASET_URL
-
+        """Recording over an old-format info upgrades it to include the datasets list."""
         tmp_cache.reference_dir.mkdir(parents=True)
         tmp_cache.info_path.write_text(
             json.dumps(
                 {
                     "version": "1.0.0",
-                    "source": DATASET_URL,
+                    "source": "https://old.example.com/PaperBananaBench.zip",
                 }
             )
         )
-        tmp_cache._record_dataset("curated", "1.0.0", "https://example.com", 38)
+        tmp_cache._record_dataset("full_bench", "1.0.0", "https://example.com", 298)
         info = json.loads(tmp_cache.info_path.read_text())
-        assert sorted(info["datasets"]) == ["curated", "full_bench"]
+        assert info["datasets"] == ["full_bench"]
 
 
-# ── DatasetManager.download (skip check) ─────────────────────────────
+# ── DatasetManager.download ──────────────────────────────────────────
 
 
-class TestDownloadSkip:
+class TestDownload:
+    @staticmethod
+    def _make_bench_zip(zip_dest: Path):
+        """Create a minimal fake PaperBananaBench.zip (no network).
+
+        Only the top-level ``PaperBananaBench/`` directory matters here —
+        the actual import is stubbed via ``_import_from_bench``.
+        """
+        import zipfile
+
+        with zipfile.ZipFile(zip_dest, "w") as zf:
+            zf.writestr("PaperBananaBench/.keep", "")
+
+    def test_download_has_no_dataset_param(self):
+        """The curated/full_bench split is gone — download() takes no dataset arg."""
+        sig = inspect.signature(DatasetManager.download)
+        assert "dataset" not in sig.parameters
+
+    def test_url_points_at_github_mirror(self):
+        assert manager_mod.DATASET_URL == (
+            "https://github.com/llmsresearch/paperbanana/releases/download/"
+            "bench-data-v1/PaperBananaBench.zip"
+        )
+        assert manager_mod.DATASET_RELEASE_TAG == "bench-data-v1"
+        assert len(manager_mod.DATASET_SHA256) == 64
+
     def test_skip_when_already_cached(self, tmp_cache):
         tmp_cache.reference_dir.mkdir(parents=True)
         # Write a cached index with 2 examples
@@ -217,121 +225,28 @@ class TestDownloadSkip:
         tmp_cache.info_path.write_text(
             json.dumps(
                 {
-                    "datasets": ["curated"],
+                    "datasets": ["full_bench"],
                     "version": "1.0.0",
                 }
             )
         )
-        count = tmp_cache.download(dataset="curated")
+        count = tmp_cache.download()
         assert count == 2  # returns cached count, no download
 
-
-# ── DatasetManager._download_curated ─────────────────────────────────
-
-
-class TestDownloadCurated:
-    def _make_curated_zip(self, zip_dest: Path, examples: list[dict], images: dict[str, bytes]):
-        """Helper to create a fake CuratedExpansion.zip."""
-        import zipfile
-
-        with tempfile.TemporaryDirectory() as staging:
-            staging_path = Path(staging)
-            expansion = staging_path / "CuratedExpansion"
-            expansion.mkdir()
-            images_dir = expansion / "images"
-            images_dir.mkdir()
-            expansion_index = {
-                "metadata": {"name": "curated_expansion"},
-                "examples": examples,
-            }
-            (expansion / "index.json").write_text(json.dumps(expansion_index))
-            for name, data in images.items():
-                (images_dir / name).write_bytes(data)
-
-            with zipfile.ZipFile(zip_dest, "w") as zf:
-                for f in expansion.rglob("*"):
-                    zf.write(f, f.relative_to(staging_path))
-
-    def test_download_curated_merges(self, tmp_cache):
-        examples = [
-            {"id": "new1", "category": "cat1", "image_path": "images/new1.jpg"},
-            {"id": "new2", "category": "cat2", "image_path": "images/new2.jpg"},
-        ]
-        images = {"new1.jpg": b"\xff\xd8fake", "new2.jpg": b"\xff\xd8fake"}
-
-        # Seed cache with one existing example
-        tmp_cache.reference_dir.mkdir(parents=True)
-        (tmp_cache.reference_dir / "images").mkdir()
-        tmp_cache.index_path.write_text(
-            json.dumps(
-                {
-                    "metadata": {},
-                    "examples": [{"id": "existing", "category": "cat0"}],
-                }
-            )
-        )
+    def test_sha256_mismatch_raises(self, tmp_cache, monkeypatch):
+        """A corrupted/tampered archive must hard-fail before extraction."""
+        monkeypatch.setattr(manager_mod, "DATASET_SHA256", "0" * 64)
 
         def fake_download(url, dest):
-            self._make_curated_zip(dest, examples, images)
+            dest.write_bytes(b"definitely not the real dataset")
 
         with patch("paperbanana.data.manager._download_file", side_effect=fake_download):
-            count = tmp_cache.download(dataset="curated", force=True)
+            with pytest.raises(RuntimeError, match="SHA256 mismatch"):
+                tmp_cache.download(force=True)
 
-        assert count == 3  # 1 existing + 2 new
-        data = json.loads(tmp_cache.index_path.read_text())
-        ids = {e["id"] for e in data["examples"]}
-        assert ids == {"existing", "new1", "new2"}
-
-        info = json.loads(tmp_cache.info_path.read_text())
-        assert "curated" in info["datasets"]
-
-    def test_download_curated_with_progress(self, tmp_cache):
-        examples = [{"id": "p1", "category": "c", "image_path": "images/p1.jpg"}]
-        images = {"p1.jpg": b"\xff\xd8fake"}
-        messages = []
-
-        def fake_download(url, dest):
-            self._make_curated_zip(dest, examples, images)
-
-        with patch("paperbanana.data.manager._download_file", side_effect=fake_download):
-            tmp_cache.download(
-                dataset="curated",
-                force=True,
-                progress_callback=lambda msg: messages.append(msg),
-            )
-
-        assert any("curated" in m.lower() for m in messages)
-
-    def test_download_curated_404_gives_clear_error(self, tmp_cache):
-        def fake_download(url, dest):
-            raise Exception("404 Not Found")
-
-        with patch("paperbanana.data.manager._download_file", side_effect=fake_download):
-            with pytest.raises(RuntimeError, match="artifact may not be published yet"):
-                tmp_cache.download(dataset="curated", force=True)
-
-
-# ── full_bench merges with existing curated ───────────────────────────
-
-
-class TestFullBenchMerge:
-    """Downloading full_bench after curated must preserve curated-only entries."""
-
-    @staticmethod
-    def _make_bench_zip(zip_dest: Path):
-        """Create a minimal fake PaperBananaBench.zip (no network).
-
-        Only the top-level ``PaperBananaBench/`` directory matters here —
-        the actual import is stubbed via ``_import_from_bench``.
-        """
-        import zipfile
-
-        with zipfile.ZipFile(zip_dest, "w") as zf:
-            zf.writestr("PaperBananaBench/.keep", "")
-
-    def test_full_bench_preserves_curated_entries(self, tmp_cache):
-        """Curated entries that are NOT in full_bench survive a full import."""
-        # Seed cache with curated-only entries
+    def test_download_merges_and_records(self, tmp_cache, monkeypatch):
+        """Entries already in the cache survive a fresh full-bench import."""
+        # Seed cache with pre-existing entries
         tmp_cache.reference_dir.mkdir(parents=True)
         (tmp_cache.reference_dir / "images").mkdir()
         tmp_cache.index_path.write_text(
@@ -339,17 +254,9 @@ class TestFullBenchMerge:
                 {
                     "metadata": {},
                     "examples": [
-                        {"id": "curated_only", "category": "extra"},
+                        {"id": "preexisting", "category": "extra"},
                         {"id": "overlap", "category": "old_cat"},
                     ],
-                }
-            )
-        )
-        tmp_cache.info_path.write_text(
-            json.dumps(
-                {
-                    "datasets": ["curated"],
-                    "version": "1.0.0",
                 }
             )
         )
@@ -362,6 +269,10 @@ class TestFullBenchMerge:
 
         def fake_download(url, dest):
             self._make_bench_zip(dest)
+            # Make the checksum match the fake archive we just wrote
+            monkeypatch.setattr(
+                manager_mod, "DATASET_SHA256", hashlib.sha256(dest.read_bytes()).hexdigest()
+            )
 
         with (
             patch("paperbanana.data.manager._download_file", side_effect=fake_download),
@@ -370,20 +281,48 @@ class TestFullBenchMerge:
                 return_value=bench_examples,
             ),
         ):
-            count = tmp_cache.download(dataset="full_bench", force=True)
+            count = tmp_cache.download(force=True)
 
-        assert count == 3  # curated_only + overlap (updated) + bench_new
+        assert count == 3  # preexisting + overlap (updated) + bench_new
         data = json.loads(tmp_cache.index_path.read_text())
         ids = {e["id"] for e in data["examples"]}
-        assert ids == {"curated_only", "overlap", "bench_new"}
+        assert ids == {"preexisting", "overlap", "bench_new"}
 
-        # overlap entry should be updated by full_bench (new wins)
+        # overlap entry should be updated by the bench import (new wins)
         overlap = next(e for e in data["examples"] if e["id"] == "overlap")
         assert overlap["category"] == "bench_cat"
 
-        # dataset_info should list both
+        # dataset_info should record the mirror + release tag
         info = json.loads(tmp_cache.info_path.read_text())
-        assert sorted(info["datasets"]) == ["curated", "full_bench"]
+        assert info["datasets"] == ["full_bench"]
+        meta = info["dataset_meta"]["full_bench"]
+        assert meta["source"] == manager_mod.DATASET_URL
+        assert meta["revision"] == manager_mod.DATASET_RELEASE_TAG
+
+    def test_download_with_progress(self, tmp_cache, monkeypatch):
+        bench_examples = [{"id": "p1", "category": "c"}]
+        messages = []
+
+        def fake_download(url, dest):
+            self._make_bench_zip(dest)
+            monkeypatch.setattr(
+                manager_mod, "DATASET_SHA256", hashlib.sha256(dest.read_bytes()).hexdigest()
+            )
+
+        with (
+            patch("paperbanana.data.manager._download_file", side_effect=fake_download),
+            patch(
+                "paperbanana.data.manager._import_from_bench",
+                return_value=bench_examples,
+            ),
+        ):
+            tmp_cache.download(
+                force=True,
+                progress_callback=lambda msg: messages.append(msg),
+            )
+
+        assert any("checksum" in m.lower() for m in messages)
+        assert any("paperbananabench" in m.lower() for m in messages)
 
 
 # ── resolve_reference_path ────────────────────────────────────────────
@@ -408,7 +347,7 @@ class TestResolveReferencePath:
         (ref_dir / "dataset_info.json").write_text(
             json.dumps(
                 {
-                    "datasets": ["curated"],
+                    "datasets": ["full_bench"],
                     "version": "1.0.0",
                 }
             )
