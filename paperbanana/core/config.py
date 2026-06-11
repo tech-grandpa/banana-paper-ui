@@ -283,7 +283,7 @@ class Settings(BaseSettings):
         """Load settings from a YAML config file with optional overrides."""
         config_path = Path(config_path)
         if config_path.exists():
-            with open(config_path) as f:
+            with open(config_path, encoding="utf-8") as f:
                 yaml_config = yaml.safe_load(f) or {}
         else:
             yaml_config = {}
