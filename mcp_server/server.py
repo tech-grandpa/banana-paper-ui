@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from io import BytesIO
 from pathlib import Path
 
@@ -60,10 +61,14 @@ def _compress_for_api(image_path: str) -> tuple[str, str]:
         # The MCP Image class may infer MIME from the file extension, so a
         # mismatch causes the Anthropic API to reject the tool result.
         suffix = Path(image_path).suffix.lower()
-        fmt_extensions = {"jpeg": {".jpg", ".jpeg"}, "png": {".png"}, "webp": {".webp"}, "gif": {".gif"}}
+        fmt_extensions = {
+            "jpeg": {".jpg", ".jpeg"},
+            "png": {".png"},
+            "webp": {".webp"},
+            "gif": {".gif"},
+        }
         valid_exts = fmt_extensions.get(fmt, set())
         if valid_exts and suffix not in valid_exts:
-            import shutil
             corrected_ext = ".jpg" if fmt == "jpeg" else f".{fmt}"
             corrected_path = str(Path(image_path).with_suffix(corrected_ext))
             shutil.copy2(image_path, corrected_path)
