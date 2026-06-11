@@ -88,6 +88,14 @@ runs_app = typer.Typer(
 )
 app.add_typer(runs_app, name="runs")
 
+# ── Guidelines subcommand group ───────────────────────────────────
+guidelines_app = typer.Typer(
+    name="guidelines",
+    help="Manage style guides (synthesize from reference corpus).",
+    no_args_is_help=True,
+)
+app.add_typer(guidelines_app, name="guidelines")
+
 
 def _require_pdf_dep() -> None:
     """Raise a clean error if PyMuPDF is not installed."""
@@ -3871,6 +3879,199 @@ def references_categories(
     table.add_section()
     table.add_row("[bold]Total[/bold]", f"[bold]{sum(counts.values())}[/bold]")
     console.print(table)
+
+
+# ── Guidelines subcommands ────────────────────────────────────────
+
+
+@guidelines_app.command(name="synthesize")
+def guidelines_synthesize(
+    guide_type: str = typer.Option(
+        "methodology",
+        "--type",
+        help="Guide type to synthesize: methodology or plot",
+    ),
+    venue: Optional[str] = typer.Option(
+        None,
+        "--venue",
+        help=(
+            "Write the guide into the guidelines layout: "
+            "data/guidelines/<venue>/{methodology|plot}_style_guide.md"
+        ),
+    ),
+    output: Optional[str] = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Explicit output path for the synthesized guide (e.g. ./style_guide.md)",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Overwrite the target guide file if it already exists",
+    ),
+    reference_set: Optional[str] = typer.Option(
+        None,
+        "--reference-set",
+        help="Path to a reference set directory (defaults to the configured/cached set)",
+    ),
+    sample_size: int = typer.Option(
+        50,
+        "--sample-size",
+        help="Maximum number of reference figures to analyze",
+    ),
+    batch_size: int = typer.Option(
+        20,
+        "--batch-size",
+        help="Number of figures per VLM analysis call",
+    ),
+    seed: Optional[int] = typer.Option(
+        None,
+        "--seed",
+        help="Sampling seed for a reproducible corpus subset",
+    ),
+    vlm_provider: Optional[str] = typer.Option(None, "--vlm-provider", help="VLM provider"),
+    vlm_model: Optional[str] = typer.Option(None, "--vlm-model", help="VLM model name"),
+    budget: Optional[float] = typer.Option(
+        None,
+        "--budget",
+        help="Budget cap in USD; synthesis aborts gracefully when exceeded",
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed progress"),
+    config: Optional[str] = typer.Option(None, "--config", help="Path to config YAML file"),
+):
+    """Synthesize a corpus-grounded style guide from reference figures.
+
+    Samples up to --sample-size reference figures, VLM-analyzes them in
+    batches of --batch-size (palettes, layout, line/shape semantics,
+    typography), then merges the analyses into one markdown style guide
+    that preserves multiple accepted options and domain-conditional rules.
+    """
+    from paperbanana.guidelines.synthesis import GUIDE_TYPES, synthesize_style_guide
+
+    if guide_type not in GUIDE_TYPES:
+        console.print(
+            f"[red]Error: --type must be 'methodology' or 'plot'. Got: {guide_type}[/red]"
+        )
+        raise typer.Exit(1)
+    if venue is None and output is None:
+        console.print(
+            "[red]Error: Pass --venue NAME (write into the guidelines layout) "
+            "or --output PATH (e.g. --output ./style_guide.md).[/red]\n"
+            "Built-in guides are never overwritten implicitly."
+        )
+        raise typer.Exit(1)
+    if venue is not None and output is not None:
+        console.print("[red]Error: --venue and --output are mutually exclusive.[/red]")
+        raise typer.Exit(1)
+    if venue is not None and venue.lower() not in ("neurips", "icml", "acl", "ieee"):
+        console.print(
+            f"[red]Error: --venue must be neurips, icml, acl, or ieee. Got: {venue}[/red]\n"
+            "For a custom guide location, use --output PATH and point "
+            "GUIDELINES_PATH (or reference.guidelines_path) at its directory."
+        )
+        raise typer.Exit(1)
+
+    configure_logging(verbose=verbose)
+
+    overrides: dict = {}
+    if vlm_provider:
+        overrides["vlm_provider"] = vlm_provider
+    if vlm_model:
+        overrides["vlm_model"] = vlm_model
+    if reference_set:
+        overrides["reference_set_path"] = reference_set
+
+    if config:
+        settings = Settings.from_yaml(config, **overrides)
+    else:
+        from dotenv import load_dotenv
+
+        load_dotenv()
+        settings = Settings(**overrides)
+
+    if venue is not None:
+        target = Path(settings.guidelines_path) / venue.lower() / f"{guide_type}_style_guide.md"
+    else:
+        target = Path(output)  # type: ignore[arg-type]
+    if target.exists() and not force:
+        console.print(
+            f"[red]Error: {target} already exists.[/red] "
+            "Pass --force to overwrite it, or choose another --output path."
+        )
+        raise typer.Exit(1)
+
+    from paperbanana.core.cost_tracker import CostTracker
+    from paperbanana.providers.registry import ProviderRegistry
+    from paperbanana.reference.store import ReferenceStore
+
+    store = ReferenceStore.from_settings(settings)
+    examples = store.get_all()
+    if not examples:
+        console.print(
+            "[red]Error: No reference examples found.[/red]\n"
+            "Download the reference set with: [bold]paperbanana data download[/bold]"
+        )
+        raise typer.Exit(1)
+
+    try:
+        vlm = ProviderRegistry.create_vlm(settings)
+    except (ValueError, ImportError) as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
+
+    cost_tracker: Optional[CostTracker] = None
+    if budget is not None:
+        cost_tracker = CostTracker(budget=budget)
+        if hasattr(vlm, "cost_tracker"):
+            vlm.cost_tracker = cost_tracker
+            cost_tracker.set_agent("guidelines_synthesis")
+
+    console.print(
+        Panel.fit(
+            f"[bold]PaperBanana[/bold] - Synthesizing Style Guide\n\n"
+            f"Type: {guide_type}\n"
+            f"Corpus: {store.count} examples\n"
+            f"Sample: up to {sample_size} figures (batches of {batch_size})\n"
+            f"VLM: {settings.vlm_provider} / {settings.effective_vlm_model}\n"
+            f"Output: {target}",
+            border_style="green",
+        )
+    )
+
+    async def _run() -> str:
+        return await synthesize_style_guide(
+            vlm,
+            examples,
+            guide_type=guide_type,
+            batch_size=batch_size,
+            sample_size=sample_size,
+            seed=seed,
+            prompt_dir=settings.prompt_dir,
+            progress_callback=lambda msg: console.print(f"  [dim]●[/dim] {msg}"),
+        )
+
+    try:
+        guide = asyncio.run(_run())
+    except Exception as e:
+        console.print(f"\n[red]Error: {e}[/red]")
+        raise typer.Exit(1)
+
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(guide, encoding="utf-8")
+    except OSError as e:
+        console.print(
+            f"\n[red]Error: Cannot write to {target} ({e}).[/red]\n"
+            "Re-run with --output pointing to a writable path."
+        )
+        raise typer.Exit(1)
+
+    console.print(f"\n[green]Done![/green] Style guide saved to: [bold]{target}[/bold]")
+    if venue is not None:
+        console.print(f"  Use it with: [bold]--venue {venue.lower()}[/bold]")
+    if cost_tracker is not None:
+        console.print(f"  Cost: [bold]${cost_tracker.total_cost:.4f}[/bold]")
 
 
 @app.command()
