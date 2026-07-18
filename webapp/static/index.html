@@ -308,10 +308,12 @@
         .progress-agents {
             display: flex;
             border-top: 1px solid var(--ink-medium);
+            overflow-x: auto;
         }
-        
+
         .agent-step {
             flex: 1;
+            min-width: 88px;
             padding: 1rem 0.75rem;
             text-align: center;
             border-right: 1px solid var(--ink-medium);
@@ -615,6 +617,10 @@
                 </div>
                 
                 <div class="progress-agents" id="agentSteps">
+                    <div class="agent-step" data-agent="optimizer">
+                        <div class="agent-step-icon">✨</div>
+                        <div class="agent-step-name">Optimize</div>
+                    </div>
                     <div class="agent-step" data-agent="retriever">
                         <div class="agent-step-icon">🔍</div>
                         <div class="agent-step-name">Retriever</div>
@@ -626,6 +632,10 @@
                     <div class="agent-step" data-agent="stylist">
                         <div class="agent-step-icon">🎨</div>
                         <div class="agent-step-name">Stylist</div>
+                    </div>
+                    <div class="agent-step" data-agent="structurer">
+                        <div class="agent-step-icon">🧩</div>
+                        <div class="agent-step-name">Structure</div>
                     </div>
                     <div class="agent-step" data-agent="visualizer">
                         <div class="agent-step-icon">🖼️</div>
@@ -670,27 +680,36 @@
     <script>
         let currentJobId = null;
         let pollInterval = null;
-        const agentOrder = ['retriever', 'planner', 'stylist', 'visualizer', 'critic'];
-        let highestAgentIndex = -1;
-        
+        const agentOrder = [
+            'optimizer', 'retriever', 'planner', 'stylist',
+            'structurer', 'visualizer', 'critic'
+        ];
+        let currentAgentIndex = -1;
+        const completedAgentIndexes = new Set();
+
         function resetAgentSteps() {
-            highestAgentIndex = -1;
+            currentAgentIndex = -1;
+            completedAgentIndexes.clear();
             document.querySelectorAll('.agent-step').forEach(el => {
                 el.classList.remove('active', 'done');
             });
         }
-        
+
         function setAgentActive(agentName) {
             const idx = agentOrder.indexOf(agentName);
             if (idx === -1) return;
-            if (idx > highestAgentIndex) highestAgentIndex = idx;
-            
-            document.querySelectorAll('.agent-step').forEach((el, i) => {
-                const a = el.dataset.agent;
-                const ai = agentOrder.indexOf(a);
-                el.classList.remove('active', 'done');
-                if (ai < highestAgentIndex) el.classList.add('done');
-                else if (ai === highestAgentIndex) el.classList.add('active');
+            if (currentAgentIndex >= 0 && currentAgentIndex !== idx) {
+                completedAgentIndexes.add(currentAgentIndex);
+            }
+            currentAgentIndex = idx;
+
+            document.querySelectorAll('.agent-step').forEach(el => {
+                const agentIndex = agentOrder.indexOf(el.dataset.agent);
+                el.classList.toggle('active', agentIndex === currentAgentIndex);
+                el.classList.toggle(
+                    'done',
+                    completedAgentIndexes.has(agentIndex) && agentIndex !== currentAgentIndex
+                );
             });
         }
         
@@ -708,7 +727,7 @@
             document.getElementById('resultsPanel').classList.remove('active');
             document.getElementById('progressPanel').classList.add('active');
             document.getElementById('generateBtn').disabled = true;
-            document.getElementById('errorContainer').innerHTML = '';
+            document.getElementById('errorContainer').replaceChildren();
             document.getElementById('statusPill').className = 'status-pill';
             document.getElementById('statusPill').textContent = 'Running';
             document.getElementById('barFill').style.width = '0%';
@@ -722,8 +741,17 @@
                     body: JSON.stringify({ text, caption, iterations }),
                 });
                 
-                if (!response.ok) throw new Error('Failed to start generation');
-                
+                if (!response.ok) {
+                    let message = 'Failed to start generation';
+                    try {
+                        const errorBody = await response.json();
+                        if (errorBody.detail) message = errorBody.detail;
+                    } catch (_) {
+                        // Preserve the generic message for non-JSON failures.
+                    }
+                    throw new Error(message);
+                }
+
                 const data = await response.json();
                 currentJobId = data.job_id;
                 pollInterval = setInterval(pollStatus, 2000);
@@ -798,27 +826,33 @@
         function displayResults(result) {
             const wrap = document.getElementById('finalImageWrap');
             const row = document.getElementById('iterationsRow');
-            wrap.innerHTML = '';
-            row.innerHTML = '';
-            
+            wrap.replaceChildren();
+            row.replaceChildren();
+
             if (result.final_image) {
-                wrap.innerHTML = `
-                    <span class="final-badge">Final output</span>
-                    <img src="${result.final_image}" alt="Final diagram">
-                `;
+                const badge = document.createElement('span');
+                badge.className = 'final-badge';
+                badge.textContent = 'Final output';
+                const image = document.createElement('img');
+                image.src = result.final_image;
+                image.alt = 'Final diagram';
+                wrap.append(badge, image);
             }
-            
+
             result.iteration_images.forEach((url, i) => {
                 const thumb = document.createElement('div');
                 thumb.className = 'iter-thumb';
-                thumb.innerHTML = `
-                    <img src="${url}" alt="Iteration ${i + 1}">
-                    <div class="iter-label">Iter ${i + 1}</div>
-                `;
-                thumb.onclick = () => window.open(url, '_blank');
+                const image = document.createElement('img');
+                image.src = url;
+                image.alt = `Iteration ${i + 1}`;
+                const label = document.createElement('div');
+                label.className = 'iter-label';
+                label.textContent = `Iter ${i + 1}`;
+                thumb.append(image, label);
+                thumb.onclick = () => window.open(url, '_blank', 'noopener');
                 row.appendChild(thumb);
             });
-            
+
             document.getElementById('resultsPanel').classList.add('active');
             // Smooth scroll to results
             document.getElementById('resultsPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -826,7 +860,10 @@
         
         function showError(message) {
             const container = document.getElementById('errorContainer');
-            container.innerHTML = `<div class="error-box">${message}</div>`;
+            const errorBox = document.createElement('div');
+            errorBox.className = 'error-box';
+            errorBox.textContent = message;
+            container.replaceChildren(errorBox);
         }
         
         async function downloadFinalImage() {
@@ -837,7 +874,11 @@
                 if (result.final_image) {
                     const link = document.createElement('a');
                     link.href = result.final_image;
-                    link.download = `fig_${currentJobId}.png`;
+                    const imageName = result.final_image.split('/').pop();
+                    const extension = imageName.includes('.')
+                        ? imageName.split('.').pop()
+                        : 'png';
+                    link.download = `fig_${currentJobId}.${extension}`;
                     document.body.appendChild(link);
                     link.click();
                     document.body.removeChild(link);

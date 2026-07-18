@@ -35,7 +35,7 @@ class ReferenceStore:
             self._loaded = True
             return
 
-        with open(index_file) as f:
+        with open(index_file, encoding="utf-8") as f:
             data = json.load(f)
 
         for item in data.get("examples", []):
@@ -51,6 +51,8 @@ class ReferenceStore:
                     caption=item["caption"],
                     image_path=image_path,
                     category=item.get("category"),
+                    aspect_ratio=item.get("aspect_ratio"),
+                    structure_hints=item.get("structure_hints"),
                 )
             )
 
@@ -66,6 +68,17 @@ class ReferenceStore:
         """Get reference examples filtered by category."""
         self._load()
         return [e for e in self._examples if e.category == category]
+
+    def get_by_categories(self, categories: list[str]) -> list[ReferenceExample]:
+        """Get reference examples filtered by multiple categories."""
+        self._load()
+        cat_set = set(categories)
+        return [e for e in self._examples if e.category in cat_set]
+
+    def available_categories(self) -> list[str]:
+        """Return sorted list of distinct categories in the store."""
+        self._load()
+        return sorted({e.category for e in self._examples if e.category})
 
     def get_by_id(self, example_id: str) -> Optional[ReferenceExample]:
         """Get a specific reference example by ID."""
@@ -105,7 +118,7 @@ class ReferenceStore:
             "examples": [e.model_dump() for e in examples],
         }
 
-        with open(path / "index.json", "w") as f:
+        with open(path / "index.json", "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
 
         logger.info("Created reference store", path=str(path), count=len(examples))
@@ -113,3 +126,26 @@ class ReferenceStore:
         store._examples = examples
         store._loaded = True
         return store
+
+    @classmethod
+    def from_settings(cls, settings) -> ReferenceStore:
+        """Create a ReferenceStore with automatic path resolution.
+
+        Resolution priority:
+        1. REFERENCE_SET_PATH env var (explicit override)
+        2. Cached expanded dataset (~/.cache/paperbanana/reference_sets/)
+        3. Built-in reference set (data/reference_sets/)
+
+        Args:
+            settings: Settings instance with reference_set_path and cache_dir.
+
+        Returns:
+            ReferenceStore with the best available reference set.
+        """
+        from paperbanana.data.manager import resolve_reference_path
+
+        resolved = resolve_reference_path(
+            settings_path=settings.reference_set_path,
+            cache_dir=settings.cache_dir,
+        )
+        return cls(resolved)

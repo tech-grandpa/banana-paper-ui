@@ -3,9 +3,56 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+VectorExportMode = Literal["none", "svg", "pdf", "both"]
+
+# Supported aspect ratios for diagram/plot generation.
+SUPPORTED_ASPECT_RATIOS = {
+    "1:1",
+    "2:3",
+    "3:2",
+    "3:4",
+    "4:3",
+    "9:16",
+    "16:9",
+    "21:9",
+}
+
+
+class PipelineProgressStage(str, Enum):
+    """Pipeline stage identifiers for progress callbacks."""
+
+    OPTIMIZER_START = "optimizer_start"
+    OPTIMIZER_END = "optimizer_end"
+    RETRIEVER_START = "retriever_start"
+    RETRIEVER_END = "retriever_end"
+    PLANNER_START = "planner_start"
+    PLANNER_END = "planner_end"
+    STYLIST_START = "stylist_start"
+    STYLIST_END = "stylist_end"
+    STRUCTURER_START = "structurer_start"
+    STRUCTURER_END = "structurer_end"
+    VISUALIZER_START = "visualizer_start"
+    VISUALIZER_END = "visualizer_end"
+    CRITIC_START = "critic_start"
+    CRITIC_END = "critic_end"
+    CAPTION_START = "caption_start"
+    CAPTION_END = "caption_end"
+    TIKZ_EXPORTER_START = "tikz_exporter_start"
+    TIKZ_EXPORTER_END = "tikz_exporter_end"
+
+
+class PipelineProgressEvent(BaseModel):
+    """Single progress event emitted by the pipeline for callbacks."""
+
+    stage: PipelineProgressStage = Field(description="Pipeline stage identifier")
+    message: str = Field(description="Human-readable message")
+    seconds: Optional[float] = Field(default=None, description="Elapsed seconds for this step")
+    iteration: Optional[int] = Field(default=None, description="Refinement iteration (1-based)")
+    extra: Optional[dict[str, Any]] = Field(default=None, description="Optional extra data")
 
 
 class DiagramType(str, Enum):
@@ -24,6 +71,45 @@ class GenerationInput(BaseModel):
     raw_data: Optional[dict[str, Any]] = Field(
         default=None, description="Raw data for statistical plots (CSV path or dict)"
     )
+    aspect_ratio: Optional[str] = Field(
+        default=None,
+        description=(
+            "Target aspect ratio. "
+            "Supported: 1:1, 2:3, 3:2, 3:4, 4:3, 9:16, 16:9, 21:9. "
+            "If None, uses provider default."
+        ),
+    )
+    reference_ids: Optional[list[str]] = Field(
+        default=None,
+        description=(
+            "Explicit reference example IDs to use, bypassing automatic retrieval. "
+            "When provided, the RetrieverAgent is skipped and these examples are "
+            "looked up directly from the ReferenceStore."
+        ),
+    )
+    vector_export: Optional[VectorExportMode] = Field(
+        default=None,
+        description="Optional vector export (svg/pdf/both); None uses Settings.vector_export",
+    )
+    input_images: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Paths to user-provided reference/sketch images (e.g. a hand-drawn "
+            "sketch, whiteboard photo, or prior figure version) that guide the "
+            "Planner alongside retrieved exemplars."
+        ),
+    )
+
+    @field_validator("aspect_ratio")
+    @classmethod
+    def validate_aspect_ratio(cls, v: Optional[str]) -> Optional[str]:
+        """Ensure aspect_ratio, when provided, is one of the supported values."""
+        if v is None:
+            return v
+        if v not in SUPPORTED_ASPECT_RATIOS:
+            supported = ", ".join(sorted(SUPPORTED_ASPECT_RATIOS))
+            raise ValueError(f"aspect_ratio must be one of: {supported}")
+        return v
 
 
 class ReferenceExample(BaseModel):
@@ -34,6 +120,40 @@ class ReferenceExample(BaseModel):
     caption: str
     image_path: str
     category: Optional[str] = None
+    aspect_ratio: Optional[float] = None
+    structure_hints: Optional[dict[str, Any] | list[Any] | str] = None
+
+
+class TestCase(BaseModel):
+    """A single entry from the official PaperBananaBench test split.
+
+    Mirrors the upstream ``test.json`` schema (292 diagram / 240 plot entries)
+    so benchmark runs are comparable to the paper (arXiv:2601.23265).
+    """
+
+    id: str
+    task: Literal["diagram", "plot"] = Field(
+        default="diagram", description="Benchmark task this case belongs to"
+    )
+    category: str = ""
+    source_context: str = Field(
+        description="Methodology text (diagram) or JSON-encoded data table (plot)"
+    )
+    caption: str = Field(default="", description="Official visual_intent for the entry")
+    gt_image_path: str = Field(description="Path to the ground-truth (human-drawn) image")
+    aspect_ratio: Optional[str] = Field(
+        default=None,
+        description="Official rounded_ratio from additional_info (e.g. '16:9')",
+    )
+    raw_data: Optional[dict[str, Any]] = Field(
+        default=None, description="Raw data table for plot entries"
+    )
+    gt_code: Optional[str] = Field(
+        default=None, description="Ground-truth matplotlib code (plot entries only)"
+    )
+    difficulty: Optional[str] = Field(
+        default=None, description="Official difficulty label (plot entries only)"
+    )
 
 
 class CritiqueResult(BaseModel):
@@ -73,6 +193,123 @@ class GenerationOutput(BaseModel):
         default_factory=list, description="History of refinement iterations"
     )
     metadata: dict[str, Any] = Field(default_factory=dict)
+    generated_caption: Optional[str] = Field(
+        default=None,
+        description=(
+            "Auto-generated publication-ready figure caption. "
+            "Only present when generate_caption=True was passed to the pipeline."
+        ),
+    )
+    tikz_path: Optional[str] = Field(
+        default=None, description="Path to the exported LaTeX/TikZ source file, if generated"
+    )
+    vector_svg_path: Optional[str] = Field(
+        default=None, description="Path to exported SVG (methodology + vector export)"
+    )
+    vector_pdf_path: Optional[str] = Field(
+        default=None, description="Path to exported PDF (methodology + vector export)"
+    )
+
+
+class DiagramIRNode(BaseModel):
+    """A node in an editable diagram intermediate representation."""
+
+    id: str
+    label: str
+    lane: Optional[str] = None
+    shape: Optional[str] = None
+
+
+class DiagramIREdge(BaseModel):
+    """A directed edge in the diagram intermediate representation."""
+
+    id: Optional[str] = None
+    source: str
+    target: str
+    label: Optional[str] = None
+
+
+class DiagramIRGroup(BaseModel):
+    """A visual lane/group container in the diagram IR."""
+
+    id: str
+    label: str
+    node_ids: list[str] = Field(default_factory=list)
+
+
+class DiagramIRLocks(BaseModel):
+    """Optional lock constraints for lock-aware regeneration."""
+
+    locked_node_ids: list[str] = Field(default_factory=list)
+    locked_edge_refs: list[str] = Field(default_factory=list)
+    locked_group_ids: list[str] = Field(default_factory=list)
+
+
+class DiagramIR(BaseModel):
+    """Lightweight intermediate representation for editable exports."""
+
+    title: str
+    nodes: list[DiagramIRNode] = Field(default_factory=list)
+    edges: list[DiagramIREdge] = Field(default_factory=list)
+    groups: list[DiagramIRGroup] = Field(default_factory=list)
+    layout_direction: Literal["LR", "TB", "RL", "BT"] = "LR"
+    locks: DiagramIRLocks = Field(default_factory=DiagramIRLocks)
+
+    @model_validator(mode="after")
+    def validate_references(self) -> "DiagramIR":
+        """Validate IDs, cross-references, and lock targets."""
+        node_ids = [n.id for n in self.nodes]
+        if len(node_ids) != len(set(node_ids)):
+            raise ValueError("DiagramIR nodes contain duplicate IDs")
+        node_set = set(node_ids)
+
+        group_ids = [g.id for g in self.groups]
+        if len(group_ids) != len(set(group_ids)):
+            raise ValueError("DiagramIR groups contain duplicate IDs")
+        group_set = set(group_ids)
+
+        edge_ids = [e.id for e in self.edges if e.id]
+        if len(edge_ids) != len(set(edge_ids)):
+            raise ValueError("DiagramIR edges contain duplicate IDs")
+
+        edge_refs: set[str] = set()
+        for e in self.edges:
+            if e.source not in node_set or e.target not in node_set:
+                raise ValueError(
+                    f"DiagramIR edge references unknown node(s): {e.source} -> {e.target}"
+                )
+            edge_refs.add(f"{e.source}->{e.target}")
+            if e.label:
+                edge_refs.add(f"{e.source}->{e.target}:{e.label}")
+            if e.id:
+                edge_refs.add(e.id)
+
+        for g in self.groups:
+            missing_nodes = [nid for nid in g.node_ids if nid not in node_set]
+            if missing_nodes:
+                missing = ", ".join(missing_nodes)
+                raise ValueError(f"DiagramIR group '{g.id}' references unknown nodes: {missing}")
+
+        missing_locked_nodes = [nid for nid in self.locks.locked_node_ids if nid not in node_set]
+        if missing_locked_nodes:
+            raise ValueError(
+                "DiagramIR locks reference unknown nodes: " + ", ".join(missing_locked_nodes)
+            )
+
+        missing_locked_groups = [gid for gid in self.locks.locked_group_ids if gid not in group_set]
+        if missing_locked_groups:
+            raise ValueError(
+                "DiagramIR locks reference unknown groups: " + ", ".join(missing_locked_groups)
+            )
+
+        missing_locked_edges = [
+            eref for eref in self.locks.locked_edge_refs if eref not in edge_refs
+        ]
+        if missing_locked_edges:
+            raise ValueError(
+                "DiagramIR locks reference unknown edges: " + ", ".join(missing_locked_edges)
+            )
+        return self
 
 
 VALID_WINNERS = {"Model", "Human", "Both are good", "Both are bad"}

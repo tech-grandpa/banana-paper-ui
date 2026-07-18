@@ -1,158 +1,116 @@
-# PaperBanana Web UI
+# PaperBanana FastAPI Web UI
 
-A web interface for the PaperBanana text-to-diagram generator.
+The TechGrandpa web interface for PaperBanana. It provides a paste-text-to-diagram workflow, live pipeline progress, an iteration gallery, and downloads.
+
+Hosted instance: **https://fig.acgt.dev**
 
 ## Features
 
-- **Intuitive UI**: Clean, retro-futuristic design with dark mode
-- **Real-time Progress**: Live updates showing which agent is running and current iteration
-- **Result Gallery**: View all iterations side-by-side with the final output highlighted
-- **Easy Download**: One-click download of the final diagram
+- Dark, responsive single-page interface
+- Live progress from PaperBanana's structured progress callbacks
+- One to five visualizer/critic refinement rounds
+- Final image and iteration gallery
+- OpenRouter and Google provider support through the standard PaperBanana settings
 
 ## Setup
 
-### 1. Install Dependencies
-
-First, create and activate a virtual environment:
-
 ```bash
-cd /Users/tg/repos/banana-paper-ui
+git clone https://github.com/tech-grandpa/banana-paper-ui.git
+cd banana-paper-ui
 python3 -m venv venv
 source venv/bin/activate
+pip install -e '.[web]'
+cp .env.example .env
 ```
 
-Then install the package and web dependencies:
-
-```bash
-pip install -e ".[google]"
-pip install fastapi uvicorn python-multipart
-```
-
-### 2. Configure Environment
-
-Make sure you have a `.env` file in the repo root with your Google API key:
+Configure `.env`. The hosted deployment uses OpenRouter with Claude Opus 4.8 for planning and critique:
 
 ```env
-GOOGLE_API_KEY=your_api_key_here
+OPENROUTER_API_KEY=your-key-here
+VLM_PROVIDER=openrouter
+VLM_MODEL=anthropic/claude-opus-4.8
+IMAGE_PROVIDER=openrouter_imagen
+IMAGE_MODEL=google/gemini-3-pro-image
+
+# Public-endpoint safety limits
+WEB_MAX_REQUEST_BYTES=262144
+WEB_MAX_ACTIVE_JOBS=1
+WEB_MAX_GLOBAL_REQUESTS_PER_HOUR=4
+WEB_MAX_CLIENT_REQUESTS_PER_HOUR=2
+WEB_JOB_BUDGET_USD=1.00
+WEB_RUNS_DIR=outputs/web
+WEB_RUN_TTL_SECONDS=86400
+WEB_RUN_DISK_QUOTA_BYTES=1073741824
+WEB_RUN_CLEANUP_INTERVAL_SECONDS=300
 ```
 
-You can copy `.env.example` as a starting point.
+The web endpoint rejects oversized HTTP bodies before JSON parsing, forbids unknown request fields, bounds source and caption lengths, retains at most 100 jobs in memory, and only serves verified PNG/JPEG/WebP files explicitly recorded for a completed job with `nosniff` response protection. Public runs are isolated under `WEB_RUNS_DIR`. Cleanup runs at startup and every `WEB_RUN_CLEANUP_INTERVAL_SECONDS`: it removes directories older than `WEB_RUN_TTL_SECONDS`, then removes the oldest completed runs until total file usage is at or below `WEB_RUN_DISK_QUOTA_BYTES`. Active runs are protected. This retention deletes saved source input, prompts, intermediate images, and final images, so copy any result that must be kept before its TTL expires.
 
-## Running the Server
+Keep Uvicorn at one worker because job and rate-limit state is process-local. When deployed behind a trusted reverse proxy, set `WEB_TRUST_PROXY_HEADERS=true` for per-client limits.
 
-Start the web server:
+Do not commit `.env`.
+
+## Run locally
 
 ```bash
-# From the repo root
-cd /Users/tg/repos/banana-paper-ui
-
-# Activate venv if not already active
 source venv/bin/activate
-
-# Run the server
 python -m webapp.main
 ```
 
-Or use uvicorn directly:
+Or choose the bind address and port explicitly:
 
 ```bash
-uvicorn webapp.main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn webapp.main:app --host 0.0.0.0 --port 8765
 ```
 
-The server will be available at:
-- **Local**: http://localhost:8000
-- **Network**: http://0.0.0.0:8000
-
-## Usage
-
-1. **Paste your text**: Add your methodology description or paper text in the large text area
-2. **Add a caption**: Describe what the diagram should communicate
-3. **Select iterations**: Choose 1-5 refinement iterations (default: 3)
-4. **Generate**: Click "Generate Diagram" and watch the progress
-5. **Download**: Once complete, download your final diagram
-
-## API Endpoints
+## API
 
 ### `POST /api/generate`
 
-Start a new diagram generation job.
-
-**Request Body:**
 ```json
 {
-  "text": "Source context / methodology description",
-  "caption": "Communicative intent / caption",
+  "text": "Source context or methodology description",
+  "caption": "What the diagram should communicate",
   "iterations": 3
 }
 ```
 
-**Response:**
-```json
-{
-  "job_id": "uuid",
-  "status": "queued"
-}
-```
+Returns a queued job ID.
 
 ### `GET /api/status/{job_id}`
 
-Get the current status of a generation job.
-
-**Response:**
-```json
-{
-  "job_id": "uuid",
-  "status": "running",
-  "phase": "refinement",
-  "agent": "visualizer",
-  "iteration": 2,
-  "total_iterations": 3,
-  "progress": "Generating image (iteration 2/3)...",
-  "error": null
-}
-```
+Returns the current status, pipeline phase, active agent, iteration, progress message, and any error.
 
 ### `GET /api/result/{job_id}`
 
-Get the results of a completed job.
-
-**Response:**
-```json
-{
-  "job_id": "uuid",
-  "status": "completed",
-  "final_image": "/api/result/{job_id}/image/final.png",
-  "iteration_images": [
-    "/api/result/{job_id}/image/iteration_1.png",
-    "/api/result/{job_id}/image/iteration_2.png",
-    "/api/result/{job_id}/image/iteration_3.png"
-  ],
-  "error": null
-}
-```
+Returns final and iteration image URLs after completion.
 
 ### `GET /api/result/{job_id}/image/{filename}`
 
-Download an individual image file.
+Returns a generated image associated with the job.
 
-## Architecture
+## Production service
 
-- **Backend**: FastAPI with async/await support
-- **Frontend**: Single-page HTML with vanilla JavaScript
-- **Storage**: In-memory job storage (resets on server restart)
-- **Progress Tracking**: Polls `/api/status` every 2 seconds during generation
+The hosted Ubuntu VM runs the app as `paperbanana.service` on port `8765`:
 
-## Design
+```ini
+[Service]
+User=ng
+WorkingDirectory=/home/ng/banana-paper-ui
+ExecStart=/home/ng/banana-paper-ui/venv/bin/python -m uvicorn webapp.main:app --host 0.0.0.0 --port 8765
+Restart=on-failure
+```
 
-The UI uses a retro-futuristic aesthetic:
-- **Colors**: Electric orange (#ff6b35), deep purple (#1a1a2e), cream text (#f4f1de)
-- **Fonts**: Outfit (body), Syne (headings)
-- **Style**: Dark mode, glowing effects, smooth animations
+Useful commands:
+
+```bash
+sudo systemctl status paperbanana
+sudo systemctl restart paperbanana
+sudo journalctl -u paperbanana -n 100 --no-pager
+```
 
 ## Notes
 
-- Jobs are stored in memory and will be lost on server restart
-- The pipeline runs asynchronously in the background
-- Multiple generations can run concurrently
-- Each job gets a unique UUID and its own output directory
-- The server loads `.env` from the repo root automatically
+- Job state is kept in memory and resets when the service restarts.
+- Generated web files are temporary and subject to the configured TTL and disk quota.
+- The server loads `.env` from the repository root.

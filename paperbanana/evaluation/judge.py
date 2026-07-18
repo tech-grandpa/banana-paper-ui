@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Optional
 
@@ -11,10 +10,11 @@ import structlog
 from paperbanana.core.types import (
     VALID_WINNERS,
     WINNER_SCORE_MAP,
+    DiagramType,
     DimensionResult,
     EvaluationScore,
 )
-from paperbanana.core.utils import load_image
+from paperbanana.core.utils import extract_json, load_image, truncate_text
 from paperbanana.providers.base import VLMProvider
 
 logger = structlog.get_logger()
@@ -24,6 +24,17 @@ DIMENSIONS = ["faithfulness", "conciseness", "readability", "aesthetics"]
 # Primary dimensions take precedence in hierarchical aggregation
 PRIMARY_DIMENSIONS = ["faithfulness", "readability"]
 SECONDARY_DIMENSIONS = ["conciseness", "aesthetics"]
+_EVAL_TASK_TO_PROMPT_SUBDIR = {
+    DiagramType.METHODOLOGY: "diagram",
+    DiagramType.STATISTICAL_PLOT: "plot",
+}
+_EVAL_TASK_ALIASES = {
+    "diagram": "diagram",
+    "methodology": "diagram",
+    "methodology_diagram": "diagram",
+    "plot": "plot",
+    "statistical_plot": "plot",
+}
 
 
 class VLMJudge:
@@ -46,6 +57,7 @@ class VLMJudge:
         source_context: str,
         caption: str,
         reference_path: str,
+        task: DiagramType | str = DiagramType.METHODOLOGY,
     ) -> EvaluationScore:
         """Evaluate a generated image by comparing against a human reference.
 
@@ -60,31 +72,32 @@ class VLMJudge:
         """
         model_image = load_image(image_path)
         reference_image = load_image(reference_path)
+        prompt_subdir = self._resolve_prompt_subdir(task)
 
         # Both images: [Human reference, Model generated]
         images = [reference_image, model_image]
 
         results: dict[str, DimensionResult] = {}
 
+        json_ok = getattr(self.vlm, "supports_json_mode", True)
         for dim in DIMENSIONS:
-            logger.info("Evaluating dimension", dimension=dim)
-
-            prompt = self._load_eval_prompt(dim, source_context, caption)
-
+            logger.info("Evaluating dimension", dimension=dim, json_mode=json_ok)
+            prompt = self._load_eval_prompt(
+                dim,
+                source_context,
+                caption,
+                prompt_subdir=prompt_subdir,
+            )
             response = await self.vlm.generate(
                 prompt=prompt,
                 images=images,
                 temperature=0.1,
                 max_tokens=1024,
-                response_format="json",
+                response_format="json" if json_ok else None,
             )
-
             results[dim] = self._parse_result(response, dim)
-
-        # Hierarchical aggregation
         overall_winner = self._hierarchical_aggregate(results)
         overall_score = WINNER_SCORE_MAP.get(overall_winner, 50.0)
-
         return EvaluationScore(
             faithfulness=results["faithfulness"],
             conciseness=results["conciseness"],
@@ -94,44 +107,73 @@ class VLMJudge:
             overall_score=overall_score,
         )
 
-    def _load_eval_prompt(self, dimension: str, source_context: str, caption: str) -> str:
+    def _load_eval_prompt(
+        self,
+        dimension: str,
+        source_context: str,
+        caption: str,
+        *,
+        prompt_subdir: str = "diagram",
+    ) -> str:
         """Load evaluation prompt for a specific dimension."""
-        prompt_path = self.prompt_dir / "evaluation" / f"{dimension}.txt"
-        if not prompt_path.exists():
-            raise FileNotFoundError(f"Evaluation prompt not found: {prompt_path}")
+        candidates: list[Path]
+        if prompt_subdir == "diagram":
+            # Backward compatibility: support both new nested location and legacy paths.
+            candidates = [
+                self.prompt_dir / "evaluation" / "diagram" / f"{dimension}.txt",
+                self.prompt_dir / "evaluation" / f"{dimension}.txt",
+            ]
+        else:
+            candidates = [self.prompt_dir / "evaluation" / prompt_subdir / f"{dimension}.txt"]
 
+        prompt_path = next((p for p in candidates if p.exists()), None)
+        if prompt_path is None:
+            searched = ", ".join(str(p) for p in candidates)
+            raise FileNotFoundError(f"Evaluation prompt not found. Searched: {searched}")
         template = prompt_path.read_text(encoding="utf-8")
         return template.format(source_context=source_context, caption=caption)
 
+    def _resolve_prompt_subdir(self, task: DiagramType | str) -> str:
+        """Normalize evaluation task into prompt subdirectory name."""
+        if isinstance(task, DiagramType):
+            return _EVAL_TASK_TO_PROMPT_SUBDIR[task]
+
+        normalized = str(task).strip().lower()
+        if normalized in _EVAL_TASK_ALIASES:
+            return _EVAL_TASK_ALIASES[normalized]
+
+        allowed = ", ".join(sorted(_EVAL_TASK_ALIASES))
+        raise ValueError(f"Unsupported evaluation task '{task}'. Supported values: {allowed}")
+
     def _parse_result(self, response: str, dimension: str) -> DimensionResult:
         """Parse a comparative result from VLM response."""
-        try:
-            data = json.loads(response)
+        data = extract_json(response)
+        if isinstance(data, dict):
             winner = data.get("winner", "Both are good")
             reasoning = data.get("comparison_reasoning", "")
-
-            # Validate winner value
             if winner not in VALID_WINNERS:
                 logger.warning(
-                    "Invalid winner value, defaulting to tie",
+                    "Invalid winner, defaulting to tie",
                     dimension=dimension,
                     winner=winner,
                 )
                 winner = "Both are good"
-
             score = WINNER_SCORE_MAP.get(winner, 50.0)
-            return DimensionResult(winner=winner, score=score, reasoning=reasoning)
-        except (json.JSONDecodeError, ValueError, TypeError) as e:
-            logger.warning(
-                "Failed to parse evaluation response",
-                dimension=dimension,
-                error=str(e),
-            )
             return DimensionResult(
-                winner="Both are good",
-                score=50.0,
-                reasoning="Could not parse evaluation response.",
+                winner=winner,
+                score=score,
+                reasoning=reasoning,
             )
+        logger.warning(
+            "Failed to parse evaluation response",
+            dimension=dimension,
+            raw_response=truncate_text(response, 500),
+        )
+        return DimensionResult(
+            winner="Both are good",
+            score=50.0,
+            reasoning="Could not parse evaluation response.",
+        )
 
     def _hierarchical_aggregate(self, results: dict[str, DimensionResult]) -> str:
         """Apply hierarchical aggregation per paper Section 4.2.

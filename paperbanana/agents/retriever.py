@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import json
-
 import structlog
 
 from paperbanana.agents.base import BaseAgent
 from paperbanana.core.types import DiagramType, ReferenceExample
+from paperbanana.core.utils import extract_json, truncate_text
 from paperbanana.providers.base import VLMProvider
 
 logger = structlog.get_logger()
@@ -20,8 +19,10 @@ class RetrieverAgent(BaseAgent):
     reference examples are most useful for generating the target diagram.
     """
 
-    def __init__(self, vlm_provider: VLMProvider, prompt_dir: str = "prompts"):
-        super().__init__(vlm_provider, prompt_dir)
+    def __init__(
+        self, vlm_provider: VLMProvider, prompt_dir: str = "prompts", prompt_recorder=None
+    ):
+        super().__init__(vlm_provider, prompt_dir, prompt_recorder=prompt_recorder)
 
     @property
     def agent_name(self) -> str:
@@ -68,34 +69,31 @@ class RetrieverAgent(BaseAgent):
         template = self.load_prompt(prompt_type)
         prompt = self.format_prompt(
             template,
+            prompt_label="retriever",
             source_context=source_context,
             caption=caption,
             candidates=candidates_text,
             num_examples=num_examples,
         )
 
-        # Call the VLM
+        json_ok = getattr(self.vlm, "supports_json_mode", True)
         logger.info(
             "Running retriever agent",
             num_candidates=len(candidates),
             num_requested=num_examples,
+            json_mode=json_ok,
         )
         response = await self.vlm.generate(
             prompt=prompt,
-            temperature=0.3,  # Low temperature for consistent selection
-            response_format="json",
+            temperature=0.3,
+            response_format="json" if json_ok else None,
         )
-
-        # Parse response
         selected = self._parse_response(response, candidates)
         logger.info("Retriever selected examples", count=len(selected))
         return selected[:num_examples]
 
     def _format_candidates(self, candidates: list[ReferenceExample]) -> str:
-        """Format candidate examples for the prompt.
-
-        Matches paper's format: Paper ID, Caption, Methodology section.
-        """
+        """Format candidate examples for the prompt."""
         lines = []
         for i, c in enumerate(candidates):
             lines.append(
@@ -107,33 +105,26 @@ class RetrieverAgent(BaseAgent):
         return "\n".join(lines)
 
     def _parse_response(
-        self, response: str, candidates: list[ReferenceExample]
+        self,
+        response: str,
+        candidates: list[ReferenceExample],
     ) -> list[ReferenceExample]:
-        """Parse the VLM response to extract selected example IDs.
-
-        Handles both 'selected_ids' (our format) and 'top_10_papers'/'top_10_plots'
-        (paper's format) JSON keys for robustness.
-        """
-        try:
-            data = json.loads(response)
-            selected_ids = (
-                data.get("selected_ids")
-                or data.get("top_10_papers")
-                or data.get("top_10_plots")
-                or []
+        """Parse VLM response to extract selected example IDs."""
+        data = extract_json(response)
+        if not isinstance(data, dict):
+            logger.warning(
+                "Failed to parse retriever response as JSON, using fallback",
+                raw_response=truncate_text(response, 500),
             )
-        except json.JSONDecodeError:
-            logger.warning("Failed to parse retriever response as JSON, using fallback")
-            # Fallback: return first N candidates
             return candidates
-
-        # Map IDs back to ReferenceExample objects
-        id_to_example = {c.id: c for c in candidates}
+        selected_ids = (
+            data.get("selected_ids") or data.get("top_10_papers") or data.get("top_10_plots") or []
+        )
+        id_map = {c.id: c for c in candidates}
         selected = []
         for eid in selected_ids:
-            if eid in id_to_example:
-                selected.append(id_to_example[eid])
+            if eid in id_map:
+                selected.append(id_map[eid])
             else:
                 logger.warning("Retriever selected unknown ID", id=eid)
-
         return selected

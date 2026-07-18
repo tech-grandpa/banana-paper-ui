@@ -1,0 +1,33 @@
+# VCS / CI
+.git
+.github
+.claude
+
+# Virtual environments
+.venv
+venv
+
+# Build artifacts and caches
+dist
+build
+*.egg-info
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.mypy_cache
+
+# Local state and secrets
+.env
+outputs
+wiki-temp
+
+# Not needed inside the image (Dockerfile copies explicit paths anyway;
+# these just keep the build context small)
+tests
+docs
+assets
+examples
+notebooks
+integrations
+scripts

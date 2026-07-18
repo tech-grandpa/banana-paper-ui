@@ -9,8 +9,9 @@ from typing import Optional
 
 import structlog
 from PIL import Image
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_not_exception_type, stop_after_attempt, wait_exponential
 
+from paperbanana.core.cost_tracker import BudgetExceededError
 from paperbanana.providers.base import ImageGenProvider
 
 logger = structlog.get_logger()
@@ -20,7 +21,7 @@ class OpenRouterImageGen(ImageGenProvider):
     """Image generation routed through OpenRouter.
 
     Talks to models that support ``modalities: ["image", "text"]``
-    (e.g. google/gemini-3-pro-image-preview) and returns a PIL Image
+    (e.g. google/gemini-3-pro-image) and returns a PIL Image
     decoded from the base64 response.
 
     Get an API key at https://openrouter.ai/keys
@@ -29,7 +30,7 @@ class OpenRouterImageGen(ImageGenProvider):
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = "google/gemini-3-pro-image-preview",
+        model: str = "google/gemini-3-pro-image",
     ):
         self._api_key = api_key
         self._model = model
@@ -63,15 +64,17 @@ class OpenRouterImageGen(ImageGenProvider):
     def is_available(self) -> bool:
         return self._api_key is not None
 
+    @property
+    def supported_ratios(self) -> list[str]:
+        # Prompt-based hints — any ratio is conceptually supported
+        return ["1:1", "2:3", "3:2", "3:4", "4:3", "9:16", "16:9", "21:9"]
+
     @staticmethod
     def _closest_aspect_ratio(width: int, height: int) -> str:
-        """Map pixel dimensions to the closest OpenRouter-supported aspect ratio string."""
-        _RATIOS = [
-            (1, 1), (16, 9), (9, 16), (4, 3), (3, 4),
-            (3, 2), (2, 3), (4, 5), (5, 4), (21, 9),
-        ]
+        """Map pixel dimensions to the closest OpenRouter-supported ratio."""
+        ratios = [(1, 1), (2, 3), (3, 2), (3, 4), (4, 3), (9, 16), (16, 9), (21, 9)]
         target = width / height
-        best = min(_RATIOS, key=lambda r: abs(r[0] / r[1] - target))
+        best = min(ratios, key=lambda ratio: abs(ratio[0] / ratio[1] - target))
         return f"{best[0]}:{best[1]}"
 
     def _aspect_ratio_hint(self, width: int, height: int) -> str:
@@ -87,7 +90,11 @@ class OpenRouterImageGen(ImageGenProvider):
             return "portrait format (2:3)"
         return "square format (1:1)"
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=30))
+    @retry(
+        retry=retry_if_not_exception_type(BudgetExceededError),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(min=2, max=30),
+    )
     async def generate(
         self,
         prompt: str,
@@ -95,30 +102,29 @@ class OpenRouterImageGen(ImageGenProvider):
         width: int = 1024,
         height: int = 1024,
         seed: Optional[int] = None,
+        aspect_ratio: Optional[str] = None,
+        quality: Optional[str] = None,
     ) -> Image.Image:
         client = self._get_client()
 
-        # OpenRouter doesn't have native aspect-ratio params like the Google SDK,
-        # so we bake the desired format into the prompt itself.
-        aspect_hint = self._aspect_ratio_hint(width, height)
+        requested_aspect_ratio = aspect_ratio or self._closest_aspect_ratio(width, height)
+        if aspect_ratio:
+            aspect_hint = f"{aspect_ratio} format"
+        else:
+            aspect_hint = self._aspect_ratio_hint(width, height)
         full_prompt = f"{prompt}\n\nGenerate this as a {aspect_hint} image."
         if negative_prompt:
             full_prompt += f"\n\nAvoid: {negative_prompt}"
-
-        # Map pixel dimensions to closest supported aspect ratio
-        aspect_ratio = self._closest_aspect_ratio(width, height)
 
         payload = {
             "model": self._model,
             "messages": [
                 {"role": "user", "content": full_prompt},
             ],
-            # This tells OpenRouter we want an image back, not just text
+            # This tells OpenRouter we want an image back, not just text.
             "modalities": ["image", "text"],
-            # Required for some models (e.g. gemini-3-pro-image-preview)
-            "image_config": {
-                "aspect_ratio": aspect_ratio,
-            },
+            # OpenRouter forwards this native option to compatible image models.
+            "image_config": {"aspect_ratio": requested_aspect_ratio},
         }
 
         if seed is not None:
@@ -127,6 +133,20 @@ class OpenRouterImageGen(ImageGenProvider):
         response = await client.post("/chat/completions", json=payload)
         response.raise_for_status()
         data = response.json()
+        raw_usage = data.get("usage")
+        usage = raw_usage if isinstance(raw_usage, dict) else {}
+        provider_reported_cost = usage.get("cost")
+        if self.cost_tracker is not None:
+            self.cost_tracker.record_image_call(
+                provider=self.name,
+                model=self._model,
+                provider_reported_cost=provider_reported_cost,
+            )
+            if self.cost_tracker.is_over_budget:
+                raise BudgetExceededError(
+                    "OpenRouter image call exceeded the configured budget "
+                    "or returned unknown pricing"
+                )
 
         message = data["choices"][0]["message"]
 

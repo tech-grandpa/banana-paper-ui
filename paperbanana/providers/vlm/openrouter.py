@@ -6,8 +6,9 @@ from typing import Optional
 
 import structlog
 from PIL import Image
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_not_exception_type, stop_after_attempt, wait_exponential
 
+from paperbanana.core.cost_tracker import BudgetExceededError
 from paperbanana.core.utils import image_to_base64
 from paperbanana.providers.base import VLMProvider
 
@@ -57,7 +58,11 @@ class OpenRouterVLM(VLMProvider):
     def is_available(self) -> bool:
         return self._api_key is not None
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=30))
+    @retry(
+        retry=retry_if_not_exception_type(BudgetExceededError),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(min=2, max=30),
+    )
     async def generate(
         self,
         prompt: str,
@@ -101,11 +106,21 @@ class OpenRouterVLM(VLMProvider):
         response.raise_for_status()
 
         data = response.json()
-        text = data["choices"][0]["message"]["content"]
+        raw_usage = data.get("usage")
+        usage = raw_usage if isinstance(raw_usage, dict) else {}
+        logger.debug("OpenRouter response", model=self._model, usage=usage)
 
-        logger.debug(
-            "OpenRouter response",
-            model=self._model,
-            usage=data.get("usage"),
-        )
-        return text
+        if self.cost_tracker is not None:
+            self.cost_tracker.record_vlm_call(
+                provider=self.name,
+                model=self._model,
+                input_tokens=usage.get("prompt_tokens", 0),
+                output_tokens=usage.get("completion_tokens", 0),
+                provider_reported_cost=usage.get("cost"),
+            )
+            if self.cost_tracker.is_over_budget:
+                raise BudgetExceededError(
+                    "OpenRouter VLM call exceeded the configured budget or returned unknown pricing"
+                )
+
+        return data["choices"][0]["message"]["content"]
