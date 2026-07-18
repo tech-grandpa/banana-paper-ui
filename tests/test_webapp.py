@@ -442,7 +442,7 @@ async def test_image_endpoint_allows_only_recorded_images_with_correct_mime(tmp_
 def test_frontend_renders_errors_as_text() -> None:
     """Provider errors cannot inject HTML into the public page."""
     html_path = Path(webapp_main.__file__).parent / "static" / "index.html"
-    html = html_path.read_text()
+    html = html_path.read_text(encoding="utf-8")
     show_error = html.split("function showError(message)", 1)[1].split(
         "async function downloadFinalImage", 1
     )[0]
