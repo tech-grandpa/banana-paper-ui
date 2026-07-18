@@ -1,0 +1,6 @@
+display_name: "IEEE"
+# Most IEEE publications are two-column (3.5 in columns); design for column width.
+aspect_ratio: "4:3"
+# IEEE templates set the body in 10 pt Times Roman / Times New Roman, and
+# the conference template specifies 8 pt Times New Roman for figure labels.
+fonts: ["Times New Roman", "Times Roman"]

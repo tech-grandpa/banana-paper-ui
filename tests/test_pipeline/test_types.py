@@ -24,6 +24,55 @@ def test_generation_input():
     assert gi.raw_data is None
 
 
+def test_generation_input_with_valid_aspect_ratio():
+    """aspect_ratio accepts any of the supported ratios."""
+    gi = GenerationInput(
+        source_context="Test methodology",
+        communicative_intent="Test caption",
+        aspect_ratio="16:9",
+    )
+    assert gi.aspect_ratio == "16:9"
+
+
+def test_generation_input_with_invalid_aspect_ratio_raises():
+    """Invalid aspect_ratio values raise a clear error."""
+    with pytest.raises(ValueError):
+        GenerationInput(
+            source_context="Test methodology",
+            communicative_intent="Test caption",
+            aspect_ratio="16:10",
+        )
+
+
+def test_generation_input_input_images_default_empty():
+    """input_images defaults to an empty list."""
+    gi = GenerationInput(
+        source_context="Test methodology",
+        communicative_intent="Test caption",
+    )
+    assert gi.input_images == []
+
+
+def test_generation_input_accepts_input_images():
+    """input_images accepts a list of path strings."""
+    gi = GenerationInput(
+        source_context="Test methodology",
+        communicative_intent="Test caption",
+        input_images=["sketch.png", "prior_figure.jpg"],
+    )
+    assert gi.input_images == ["sketch.png", "prior_figure.jpg"]
+
+
+def test_generation_input_rejects_non_list_input_images():
+    """input_images must be a list of strings."""
+    with pytest.raises(ValueError):
+        GenerationInput(
+            source_context="Test methodology",
+            communicative_intent="Test caption",
+            input_images={"not": "a list"},
+        )
+
+
 def test_generation_input_plot():
     """Test GenerationInput for statistical plots."""
     gi = GenerationInput(

@@ -1,5 +1,22 @@
 # NeurIPS 2025 Method Diagram Aesthetics Guide
 
+## Venue Format Facts (grounded)
+
+* **Layout:** Single-column. All text and figures must fit within a text
+  block 5.5 inches (33 picas) wide by 9 inches (54 picas) high.
+* **Body font:** 10 pt Times (Times New Roman is the preferred typeface),
+  with 11 pt leading.
+* **Captions:** The figure number and caption always appear below the
+  figure, with one line space before the caption and one line space after
+  the figure. Captions are lower case except the first word and proper
+  nouns; figures are numbered consecutively.
+* **Artwork:** All artwork must be neat, clean, and legible; lines should
+  be dark enough for reproduction.
+* **Color:** Color figures are allowed, but figure captions and the paper
+  body should remain legible whether printed in black/white or in color.
+
+---
+
 ## 1. The "NeurIPS Look"
 
 The prevailing aesthetic for 2025 is **"Soft Tech & Scientific Pastels."**
@@ -173,3 +190,13 @@ corners are for processes.*
   representations, and distribution visualizations.
 * **Color:** Gradual color transitions to indicate progressive refinement
   or generation stages.
+
+---
+
+## Sources
+
+Venue format facts verified against the official NeurIPS 2026 style kit
+(`neurips_2026.sty` / `neurips_2026.tex`), accessed 2026-06-11:
+
+* https://neurips.cc/Conferences/2026/CallForPapers
+* https://media.neurips.cc/Conferences/NeurIPS2026/Formatting_Instructions_For_NeurIPS_2026.zip
